@@ -8,17 +8,15 @@ const getSize = require('get-folder-size')
 
 // Root Api.
 router.get('/', checkAuthentication, function(req, res, next) {
-    console.log(req.user)
-    selectedFile = "/Users/aps/Desktop/" + req.user.path;
+    selectedFile = req.user.path;
     var files = fs.readdirSync(selectedFile);
-    res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile });
+    res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile, user: req.user });
 });
 router.post('/', checkAuthentication, function(req, res, next){
-    console.log(req.body.selectedFile)
     selectedFile = req.body.selectedFile;
     if( fs.existsSync(selectedFile) && fs.lstatSync(selectedFile).isDirectory() ) {
         var files = fs.readdirSync(selectedFile);
-        res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile });
+        res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile, user: req.user });
     } else {
         res.render('')
     }

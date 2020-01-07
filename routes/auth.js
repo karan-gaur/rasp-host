@@ -1,10 +1,12 @@
 const express = require('express');
 const { check , validationResult } = require('express-validator');
 const router = express.Router();
-
+const fs = require('fs')
 const passport = require('passport');
 const initializePassport = require('../passport')
 const bcrypt = require('bcrypt');
+const path = require('path')
+const constants = require('../constants')
 
 
 // Login API.
@@ -22,9 +24,9 @@ router.get('/register', checkNotAuthentication, function(req, res, next) {
     res.render('register', { title: 'Register New Account.' });
 });
 router.post('/register', checkNotAuthentication, [
-    check('name','Empty Name').not().isEmpty(),
-    check('email','Enter a valid Email Address').isEmail(),
-    check('password','Empty Password').not().isEmpty()
+    check('name').not().isEmpty().withMessage('Name Cannot be Empty!!'),
+    check('email').isEmail().withMessage('Invalid Email Address'),
+    check('password').not().isEmpty().withMessage('Must be of minimum 6 Charachters')
 ], function(req, res, next) {
     var errors = validationResult(req);
     if(req.body.password != req.body.confirmPassword) {
@@ -41,7 +43,7 @@ router.post('/register', checkNotAuthentication, [
         var user = new User();
         user.name = req.body.name;
         user.email = req.body.email;
-        user.setPath(req.body.email.replace(/\s/g,''));
+        user.setPath(path.dirname(__dirname) + constants.FORWARD + constants.USER_FOLDER + constants.FORWARD + req.body.email.replace(/\s/g,''));
         bcrypt.hash(req.body.password,10).then( function(hashPwd) {
             user.setHash(hashPwd);
             user.save(function(saveError) {
@@ -53,6 +55,8 @@ router.post('/register', checkNotAuthentication, [
                     });
                 } else {
                     res.redirect('/login');
+                    fs.mkdirSync(user.path);
+                    console.log(user.path)
                 }
             });
         });

@@ -35,7 +35,8 @@ app.use(session({
     secret : config.sessionKey,
     resave : false,
     saveUninitialized : false,
-    cookie: { secure: false
+    cookie: { 
+        secure: false
     }
 }));
 app.use(function(req, res, next){
