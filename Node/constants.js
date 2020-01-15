@@ -3,5 +3,6 @@
 module.exports = {
     USER_FOLDER: "users",
     FORWARD: "/",
-    BACKWARD: "\\"
+    BACKWARD: "\\",
+    SECRET_KEY: "Check_JWT_authentication"
 };
