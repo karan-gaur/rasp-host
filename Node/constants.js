@@ -4,5 +4,7 @@ module.exports = {
     USER_FOLDER: "users",
     FORWARD: "/",
     BACKWARD: "\\",
-    SECRET_KEY: "Check_JWT_authentication"
+    ZIP_EXTENSION: ".zip",
+    ZIP_PATH: "/public/Zip/",
+    SECRET_KEY: "Check_JWT_authentication",
 };

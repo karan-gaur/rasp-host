@@ -19,7 +19,6 @@ app.use(cors());
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Handling Default routes
 app.use('/', hostRouter);
@@ -35,10 +34,7 @@ app.use(function(err, req, res, next) {
   // Set locals, only providing error in development.
   res.locals.message = err.message;
   res.locals.error = req.app.get('env') === 'development' ? err : {};
-
-  // Render the error page.
-  res.status(err.status || 500);
-  res.render('error');
+  res.sendStatus(err.status || 500);
 });
 
 module.exports = app;

@@ -1,32 +1,31 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
 const fs = require('fs');
-const zipFolder = require('zip-a-folder');
+const path = require('path');
 const multer = require('multer');
-const getSize = require('get-folder-size')
+const jwt = require('jsonwebtoken');
+const config = require('../config');
+const constants = require('../constants')
+const zipFolder = require('zip-a-folder');
+const getSize = require('get-folder-size');
 
 // Root Api.
-router.get('/', checkAuthentication, function(req, res, next) {
-    selectedFile = req.user.path;
-    var files = fs.readdirSync(selectedFile);
-    res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile, user: req.user });
-});
-router.post('/', checkAuthentication, function(req, res, next){
-    selectedFile = req.body.selectedFile;
+router.post('/', checkAuthentication, checkPath, function(req, res){
+    selectedFile = req.body.filePath;
+    console.log(selectedFile)
     if( fs.existsSync(selectedFile) && fs.lstatSync(selectedFile).isDirectory() ) {
         var files = fs.readdirSync(selectedFile);
-        res.render('index', { title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile, user: req.user });
+        res.json({ title: 'Be Professional, Be Casual, Be You', files: files, selectedFile: selectedFile });
     } else {
-        res.render('')
+        res.sendStatus(403);
     }
 });
 
 // Download files.
-router.post('/download', checkAuthentication, function(req, res, next) {
-    downloadPath = req.body.downloadPath;
+router.post('/download', checkAuthentication, checkPath, function(req, res) {
+    downloadPath = req.body.filePath;
     if( fs.existsSync(downloadPath) && fs.lstatSync(downloadPath).isDirectory() ) {
-        zipPath = path.dirname(__dirname) + "/public/Zip/" + path.basename(downloadPath) + ".zip";
+        zipPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(downloadPath) + constants.ZIP_EXTENSION;
         zipFolder.zipFolder(downloadPath, zipPath, function(zipError) {
             if(zipError) {
                 console.log('oh no!', zipError);
@@ -46,25 +45,22 @@ router.post('/download', checkAuthentication, function(req, res, next) {
 });
 
 // Upload files.
-router.post('/upload', checkAuthentication, function(req, res, next) {
-    upload = multer({ dest: 'uploads/' });
+router.post('/upload', checkAuthentication, checkPath, function(req, res) {
     getSize(req.user.path, function(error, size) {
         if(error) {
             console.log("Error Uploading file", error);
             res.statusCode(500);
-            res.send("Internal Server Error");
-        } else if((size / 1024 / 1024).toFixed(2) + req.files.uploadedFile.size < 100) {
-            req.files.uploadedFile.mv(req.user.path + req.body.path + req.files.uploadedFile.name, function(err, success) {
+        } else if((size / 1024 / 1024).toFixed(2) + req.files.uploadedFile.size <= 100) {
+            req.files.uploadedFile.mv(req.body.filePath + req.files.uploadedFile.name, function(err, success) {
                 if(err) {
                     console.log("Error saving file to structure", error);
-                    res.statusCode(400);
-                    res.send("User Save Limit Reached");
+                    res.statusCode(500);
                 }
                 console.log("File saved to structure");
                 res.send("Success");
             });
         } else {
-            console.log("User Save Limit Reached");
+            console.log("Threshold Reached");
             res.statusCode(400);
             res.send("User Save Limit Reached");
         }
@@ -72,10 +68,27 @@ router.post('/upload', checkAuthentication, function(req, res, next) {
 });
 
 // Check for authentication.
-function checkAuthentication(req, res, next){
-    if(req.isAuthenticated())
-        return next();
-    return res.redirect('/login');
+function checkAuthentication(req, res, next) {
+    if(typeof(req.headers["authorization"]) !== "undefined") {
+        const token = req.headers['authorization'].split(" ")[1];
+        req.body.token = jwt.verify(token, constants.SECRET_KEY);
+        next();
+    } else {
+        console.log("3")
+        res.sendStatus(403);
+    }
+}
+
+// Check permission for file.
+function checkPath(req, res, next) {
+    const path = req.body.filePath.split(constants.FORWARD);
+    const userHome = req.body.token.path.split(constants.FORWARD);
+    for(var i=0; i<userHome.length; i++) {
+        if(path[i] !== userHome[i]) {
+            return res.sendStatus(403);
+        }
+    }
+    next();
 }
 
 // Get File Extension.
