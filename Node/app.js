@@ -1,21 +1,22 @@
 // Default Packages.
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var logger = require('morgan');
-var cors = require('cors');
-var mongoose = require('mongoose');
+const cors = require('cors');
+const logger = require('morgan');
+const express = require('express');
+const mongoose = require('mongoose');
+const createError = require('http-errors');
+const fileUpload = require('express-fileupload');
 
 // Imported files.
-var hostRouter = require('./routes/host');
-var authRouter = require('./routes/auth');
-var config = require('./config');
+const config = require('./config');
+const hostRouter = require('./routes/host');
+const authRouter = require('./routes/auth');
 
-var app = express();
-mongoose.connect(config.dbConnectString, { useUnifiedTopology: true, useCreateIndex: true, useNewUrlParser: true });
+const app = express();
 global.User = require('./models/user');
+mongoose.connect(config.dbConnectString, { useUnifiedTopology: true, useCreateIndex: true, useNewUrlParser: true });
 
 app.use(cors());
+app.use(fileUpload());
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
