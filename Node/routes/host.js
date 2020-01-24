@@ -10,7 +10,7 @@ const zipFolder = require('zip-a-folder');
 const getSize = require('get-folder-size');
 
 // Root Api.
-router.post('/', checkAuthentication, function(req, res){
+router.post('/', checkAuthentication, (req, res) => {
     selectedFile = req.body.filePath;
     if( !fs.existsSync(selectedFile) ) {
         res.sendStatus(403);
@@ -22,32 +22,33 @@ router.post('/', checkAuthentication, function(req, res){
 });
 
 // Download files.
-router.post('/download', checkAuthentication, function(req, res) {
+router.post('/download', checkAuthentication, async (req, res) => {
     downloadPath = req.body.filePath;
     if( !fs.existsSync(downloadPath) ) {
         res.sendStatus(404);
-    } else if( fs.lstatSync(downloadPath).isDirectory() ) {
-        zipPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(downloadPath) + uuid() + constants.ZIP_EXTENSION;
-        zipFolder.zipFolder(downloadPath, zipPath, function(zipError) {
-            if(zipError) {
-                console.log('oh no!', zipError);
-            } else {
-                res.download(zipPath, function(downloadError) {
-                    if(downloadError)
-                        console.log("Error in downloading file.", downloadError);
-                    fs.unlink(zipPath, function(){
-                        console.log("File Deleted : ",zipPath);
-                    });
+    } else {
+        if( fs.lstatSync(downloadPath).isDirectory() ) {
+            downloadPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(downloadPath) + uuid() + constants.ZIP_EXTENSION;
+            await zipFolder.zipFolder(downloadPath, downloadPath, function(zipError) {
+                if(zipError) {
+                    console.log('oh no!', zipError);
+                } 
+            });
+        }
+        res.download(downloadPath, function(downloadError) {
+            if(downloadError) {
+                console.log("Error in downloading file.", downloadError);
+            } else if(downloadPath !== req.body.filePath) {
+                fs.unlink(downloadPath, function(){
+                    console.log("File Deleted : ", zipPath);
                 });
             }
         });
-    } else {
-        res.download(downloadPath);
     }
 });
 
 // Upload files.
-router.post('/upload', checkAuthentication, function(req, res) {
+router.post('/upload', checkAuthentication, (req, res) => {
     if( fs.existsSync(req.body.filePath + constants.FORWARD + req.files.uploadedFile.name) ) {
         res.sendStatus(403);
     } else {
@@ -66,7 +67,7 @@ router.post('/upload', checkAuthentication, function(req, res) {
                 });
             } else {
                 console.log("Threshold Reached");
-                return res.statusCode(400);
+                res.statusCode(400);
                 return res.send("User Save Limit Reached");
             }
         });

@@ -20,7 +20,8 @@
 .DS_Store
 
 # user profiles and folder
-users/*
+Node/users/*
+Node/public/*
 
 npm-debug.log*
 yarn-debug.log*

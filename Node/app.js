@@ -10,13 +10,14 @@ const fileUpload = require('express-fileupload');
 const config = require('./config');
 const hostRouter = require('./routes/host');
 const authRouter = require('./routes/auth');
+const Constants = require('./constants');
 
 const app = express();
 global.User = require('./models/user');
 mongoose.connect(config.dbConnectString, { useUnifiedTopology: true, useCreateIndex: true, useNewUrlParser: true });
 
 app.use(cors());
-app.use(fileUpload());
+app.use(fileUpload({useTempFiles: true, tempFileDir: Constants.TEMP_FOLDER_PATH}));
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
