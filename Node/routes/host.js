@@ -10,39 +10,72 @@ const zipFolder = require('zip-a-folder');
 const getSize = require('get-folder-size');
 
 // Root Api.
-router.post('/', checkAuthentication, (req, res) => {
+// router.post('/', checkAuthentication, (req, res) => {
+router.post('/', (req, res) => {
     selectedFile = req.body.filePath;
     if( !fs.existsSync(selectedFile) ) {
         res.sendStatus(403);
     } else if( fs.lstatSync(selectedFile).isDirectory() ) {
         res.json({ files: fs.readdirSync(selectedFile), selectedFile: selectedFile });
     } else {
-        res.sendStatus(403);
+        const path = 'assets/sample.mp4'
+        const stat = fs.statSync(req.body.filePath)
+        const fileSize = stat.size
+        const range = req.headers.range
+        
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-")
+            const start = parseInt(parts[0], 10)
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize-1
+            
+            const chunksize = (end-start) + 1
+            const file = fs.createReadStream(path, {start, end})
+            const head = {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'video/mp4',
+            }
+            
+            res.writeHead(206, head)
+            file.pipe(res)
+        } else {
+            const head = {
+                'Content-Length': fileSize,
+                'Content-Type': 'video/mp4',
+            }
+            res.writeHead(200, head)
+            fs.createReadStream(path).pipe(res)
+        }
     }
 });
 
 // Download files.
-router.post('/download', checkAuthentication, async (req, res) => {
-    downloadPath = req.body.filePath;
-    if( !fs.existsSync(downloadPath) ) {
+router.post('/download', checkAuthentication, (req, res) => {
+    if( !fs.existsSync(req.body.filePath) ) {
         res.sendStatus(404);
-    } else {
-        if( fs.lstatSync(downloadPath).isDirectory() ) {
-            downloadPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(downloadPath) + uuid() + constants.ZIP_EXTENSION;
-            await zipFolder.zipFolder(downloadPath, downloadPath, function(zipError) {
-                if(zipError) {
-                    console.log('oh no!', zipError);
-                } 
+    } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
+        downloadPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(req.body.filePath) + uuid() + constants.ZIP_EXTENSION;
+        zipFolder.zipFolder(req.body.filePath, downloadPath, (zipError) => {
+            if(zipError) {
+                console.log('oh no!\n', zipError);
+                return res.sendStatus(500)
+            } 
+            res.download(downloadPath, function(downloadError) {
+                if(downloadError) {
+                    console.log("Error in downloading file.\n", downloadError);
+                    return res.sendStatus(500);
+                }
+                fs.unlink(downloadPath, () => {
+                    console.log("File Deleted : ", downloadPath);
+                });            
             });
-        }
-        res.download(downloadPath, function(downloadError) {
-            if(downloadError) {
+        });
+    } else {
+        res.download(req.body.filePath, function(downloadError) {
+            if(downloadError) 
                 console.log("Error in downloading file.", downloadError);
-            } else if(downloadPath !== req.body.filePath) {
-                fs.unlink(downloadPath, function(){
-                    console.log("File Deleted : ", zipPath);
-                });
-            }
+                return res.sendStatus(500);
         });
     }
 });
