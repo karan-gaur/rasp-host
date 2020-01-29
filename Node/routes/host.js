@@ -11,20 +11,23 @@ const getSize = require('get-folder-size');
 
 // Root Api.
 // router.post('/', checkAuthentication, (req, res) => {
-router.post('/', (req, res) => {
+router.get('/', (req, res) => {
+    console.log("0")
+    req.body.filepath = "/home/mr_gaur/Desktop/codeshare/10 Task 10. Go Live/10-4 Create our own Peer Server for Video Call.mp4"
     if( !fs.existsSync(req.body.filePath) ) {
-        res.sendStatus(403);
+        return res.sendStatus(403);
     } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
-        res.json({ files: fs.readdirSync(req.body.filePath), selectedFile: req.body.filePath });
+        return res.json({ files: fs.readdirSync(req.body.filePath), selectedFile: req.body.filePath });
     } else {
         const path = req.body.filepath;
         const stat = fs.statSync(req.body.filePath);
         const fileSize = stat.size;
         const range = req.headers.range;
-        console.log("1", range)
-        
+
+        console.log("1", stat)
+
         if (range) {
-            console.log("If Range")
+            console.log("2")
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize-1;
@@ -37,17 +40,20 @@ router.post('/', (req, res) => {
                 'Content-Length': chunksize,
                 'Content-Type': 'video/mp4',
             };
-            
+            console.log("3")
             res.writeHead(206, head);
             file.pipe(res);
         } else {
-            console.log("Else Range");
+            console.log("4")
             const head = {
                 'Content-Length': fileSize,
                 'Content-Type': 'video/mp4',
             };
+            console.log("5")
             res.writeHead(200, head);
+            console.log("6")
             fs.createReadStream(path).pipe(res);
+            console.log("7")
         }
     }
 });

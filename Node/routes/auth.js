@@ -21,13 +21,13 @@ router.post("/login", (req, res) => {
                     res.sendStatus(403);
                 } else {
                     const token = jwt.sign({
-                        "name":user.name,
-                        "email":user.email,
-                        "path":user.path
+                        "name" : user.name,
+                        "email": user.email,
+                        "path" : user.path
                     }, constants.SECRET_KEY, {
                         expiresIn: '365d' // expires in 365 days
                    });
-                   res.json({"token": token});
+                   res.json({"token": token, "path": user.path});
                 }
             });
         } else {
