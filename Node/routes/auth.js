@@ -1,15 +1,16 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const config = require('../config');
-const constants = require('../constants');
-const nodemailer = require('nodemailer');
+const fs = require("fs");
+const path = require("path");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const config = require("../config");
+const constants = require("../constants");
+const nodemailer = require("nodemailer");
 const transport = nodemailer.createTransport(config.mailer);
 
-// Login API
+
+// Login
 router.post("/login", (req, res) => {
     User.findOne({email: req.body.email}, async (err, user) => {
         if(err) {
@@ -25,7 +26,7 @@ router.post("/login", (req, res) => {
                         "email": user.email,
                         "path" : user.path
                     }, constants.SECRET_KEY, {
-                        expiresIn: '365d' // expires in 365 days
+                        expiresIn: "365d" // expires in 365 days
                    });
                    res.json({"token": token, "path": user.path});
                 }
@@ -36,12 +37,13 @@ router.post("/login", (req, res) => {
     });
 });
 
+
 // Register new Account.
-router.post('/register', (req, res) => {
+router.post("/register", (req, res) => {
     var user = new User();
     user.name = req.body.name;
     user.email = req.body.email;
-    user.setPath(path.dirname(__dirname) + constants.FORWARD + constants.USER_FOLDER + constants.FORWARD + req.body.email.replace(/\s/g,''));
+    user.setPath(path.dirname(__dirname) + "/" + constants.USERS + "/" + req.body.email.replace(/\s/g,""));
     bcrypt.hash(req.body.password,10).then( function(hashPwd) {
         user.setHash(hashPwd);
         user.save(function(saveError) {
@@ -59,12 +61,13 @@ router.post('/register', (req, res) => {
     });
 });
 
+
 // GET Contact Us page. 
 router.post("/contact", (req, res) => {
     const mailoptions = {
         from : req.body.email,
-        to : 'national.creche@gmail.com',
-        subject : 'You got a new mail from visitor [' + req.body.name + ']',
+        to : "national.creche@gmail.com",
+        subject : "You got a new mail from visitor [" + req.body.name + "]",
         text : req.body.message
     };
     transport.sendMail(mailoptions,function(err,success) {
@@ -77,4 +80,6 @@ router.post("/contact", (req, res) => {
     });
 });
 
-module.exports = router;    
+
+module.exports = router;
+ 

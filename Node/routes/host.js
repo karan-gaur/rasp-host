@@ -1,19 +1,17 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const fs = require('fs');
-const path = require('path');
-const uuid = require('uuid/v1');
-const jwt = require('jsonwebtoken');
-const config = require('../config');
-const constants = require('../constants')
-const zipFolder = require('zip-a-folder');
-const getSize = require('get-folder-size');
+const fs = require("fs");
+const path = require("path");
+const uuid = require("uuid/v1");
+const jwt = require("jsonwebtoken");
+const config = require("../config");
+const constants = require("../constants")
+const zipFolder = require("zip-a-folder");
+const getSize = require("get-folder-size");
+
 
 // Root Api.
-// router.post('/', checkAuthentication, (req, res) => {
-router.get('/', (req, res) => {
-    console.log("0")
-    req.body.filepath = "/home/mr_gaur/Desktop/codeshare/10 Task 10. Go Live/10-4 Create our own Peer Server for Video Call.mp4"
+router.post("/", checkAuthentication, (req, res) => {
     if( !fs.existsSync(req.body.filePath) ) {
         return res.sendStatus(403);
     } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
@@ -24,10 +22,7 @@ router.get('/', (req, res) => {
         const fileSize = stat.size;
         const range = req.headers.range;
 
-        console.log("1", stat)
-
-        if (range) {
-            console.log("2")
+        if(range) {
             const parts = range.replace(/bytes=/, "").split("-");
             const start = parseInt(parts[0], 10);
             const end = parts[1] ? parseInt(parts[1], 10) : fileSize-1;
@@ -35,38 +30,34 @@ router.get('/', (req, res) => {
             const chunksize = (end-start) + 1;
             const file = fs.createReadStream(path, {start, end});
             const head = {
-                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                'Accept-Ranges': 'bytes',
-                'Content-Length': chunksize,
-                'Content-Type': 'video/mp4',
+                "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+                "Accept-Ranges": "bytes",
+                "Content-Length": chunksize,
+                "Content-Type": "video/mp4",
             };
-            console.log("3")
             res.writeHead(206, head);
             file.pipe(res);
         } else {
-            console.log("4")
             const head = {
-                'Content-Length': fileSize,
-                'Content-Type': 'video/mp4',
+                "Content-Length": fileSize,
+                "Content-Type": "video/mp4",
             };
-            console.log("5")
             res.writeHead(200, head);
-            console.log("6")
             fs.createReadStream(path).pipe(res);
-            console.log("7")
         }
     }
 });
 
+
 // Download files.
-router.post('/download', checkAuthentication, (req, res) => {
+router.post("/download", checkAuthentication, (req, res) => {
     if( !fs.existsSync(req.body.filePath) ) {
         res.sendStatus(404);
     } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
         downloadPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(req.body.filePath) + uuid() + constants.ZIP_EXTENSION;
         zipFolder.zipFolder(req.body.filePath, downloadPath, (zipError) => {
             if(zipError) {
-                console.log('oh no!\n', zipError);
+                console.log("oh no!\n", zipError);
                 return res.sendStatus(500)
             } 
             res.download(downloadPath, function(downloadError) {
@@ -88,9 +79,10 @@ router.post('/download', checkAuthentication, (req, res) => {
     }
 });
 
+
 // Upload files.
-router.post('/upload', checkAuthentication, (req, res) => {
-    if( fs.existsSync(req.body.filePath + constants.FORWARD + req.files.uploadedFile.name) ) {
+router.post("/upload", checkAuthentication, (req, res) => {
+    if( fs.existsSync(req.body.filePath + "/" + req.files.uploadedFile.name) ) {
         res.sendStatus(403);
     } else {
         getSize(req.body.token.path, function(error, size) {
@@ -98,7 +90,7 @@ router.post('/upload', checkAuthentication, (req, res) => {
                 console.log("Error Uploading file", error);
                 return res.statusCode(500);
             } else if((size / 1024 / 1024).toFixed(2) + req.files.uploadedFile.size <= 100) {
-                req.files.uploadedFile.mv(req.body.filePath + constants.FORWARD + req.files.uploadedFile.name, function(err, success) {
+                req.files.uploadedFile.mv(req.body.filePath + "/" + req.files.uploadedFile.name, function(err, success) {
                     if(err) {
                         console.log("Error saving file to structure", error);
                         return res.statusCode(500);
@@ -115,13 +107,14 @@ router.post('/upload', checkAuthentication, (req, res) => {
     }
 });
 
+
 // Check for authentication.
 function checkAuthentication(req, res, next) {
     if(typeof(req.headers["authorization"]) !== "undefined") {
-        const token = req.headers['authorization'].split(" ")[1];
+        const token = req.headers["authorization"].split(" ")[1];
         req.body.token = jwt.verify(token, constants.SECRET_KEY);
-        if(typeof(req.body.filePath) !== 'undefined') {
-            if( !checkPath( req.body.filePath.split(constants.FORWARD), req.body.token.path.split(constants.FORWARD)))
+        if(typeof(req.body.filePath) !== "undefined") {
+            if( !checkPath( req.body.filePath.split("/"), req.body.token.path.split("/")))
                 return res.sendStatus(403);
         }
         next();
@@ -129,6 +122,7 @@ function checkAuthentication(req, res, next) {
         return res.sendStatus(403);
     }
 }
+
 
 // Check permission for file.
 function checkPath(path, userHome) {
@@ -139,9 +133,10 @@ function checkPath(path, userHome) {
     return true;
 }
 
+
 // Get File Extension.
 function getFileExtension(fileName) {
-    var ext = path.extname(fileName||'').split('.');
+    var ext = path.extname(fileName||"").split(".");
     return ext[ext.length - 1];
 }
 
