@@ -12,7 +12,6 @@
     "express": "~4.17.1",
     "express-fileupload": "^1.2.1",
     "fs.js": "0.0.1",
-    "get-folder-size": "^2.0.1",
     "http-errors": "~1.7.3",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^5.11.16",
@@ -20,6 +19,8 @@
     "nodemailer": "^6.4.18",
     "nodemon": "^2.0.7",
     "uuid": "^3.4.0",
+    "winston": "^3.3.3",
+    "winston-daily-rotate-file": "^4.5.0",
     "zip-a-folder": "0.0.10"
   }
 }
