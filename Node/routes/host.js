@@ -3,21 +3,34 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const uuid = require("uuid/v1");
-const jwt = require("jsonwebtoken");
-const config = require("../config");
-const constants = require("../constants")
+const constants = require("../constants");
 const zipFolder = require("zip-a-folder");
-const getSize = require("get-folder-size");
+const config = require("../config");
+const utility = require('../utility');
+const logger = constants.LOGGER
 
 
 // Root Api.
-router.post("/", checkAuthentication, (req, res) => {
+router.post("/", utility.checkAuthentication, (req, res) => {
     if( !fs.existsSync(req.body.filePath) ) {
-        return res.sendStatus(403);
+        // Directory does not exists
+        logger.info(`No such folder exists - ${req.body.filePath}`);
+        return res.status(403).json({"error": "No such folder exists - " + req.body.path.join(path.sep)});
     } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
-        return res.json({ files: fs.readdirSync(req.body.filePath), selectedFile: req.body.filePath });
+        logger.info(`Reading directory details for '${req.body.token.email}' - ${req.body.filePath}`);
+        dirContents = fs.readdirSync(req.body.filePath)
+        files = []
+        folder = []
+        
+        // Segregating files and folders in directory
+        dirContents.forEach((file) => {
+            fs.lstatSync(path.join(req.body.filePath, file) ).isDirectory() ? folder.push(file) : files.push(file);
+        });
+        return res.status(200).json({ files: files, folder: folder, selectedFile: req.body.filePath });
     } else {
-        const path = req.body.filepath;
+        // Path points to file
+        logger.info(`Streaming video - '${req.body.filePath}`)
+        const path = req.body.filePath;
         const stat = fs.statSync(req.body.filePath);
         const fileSize = stat.size;
         const range = req.headers.range;
@@ -31,9 +44,9 @@ router.post("/", checkAuthentication, (req, res) => {
             const file = fs.createReadStream(path, {start, end});
             const head = {
                 "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-                "Accept-Ranges": "bytes",
+                "Accept-Ranges": `bytes`,
                 "Content-Length": chunksize,
-                "Content-Type": "video/mp4",
+                "Content-Type": `video/mp4`,
             };
             res.writeHead(206, head);
             file.pipe(res);
@@ -50,94 +63,115 @@ router.post("/", checkAuthentication, (req, res) => {
 
 
 // Download files.
-router.post("/download", checkAuthentication, (req, res) => {
+router.post("/download", utility.checkAuthentication, (req, res) => {    
     if( !fs.existsSync(req.body.filePath) ) {
-        res.sendStatus(404);
+        // File or Folder does not exist
+        logger.info(`No such file - '${req.body.filePath}'`)
+        return res.status(404).json({"error": "No such file exists -" + req.body.path.join(path.sep)});
     } else if( fs.lstatSync(req.body.filePath).isDirectory() ) {
-        downloadPath = path.dirname(__dirname) + constants.ZIP_PATH + path.basename(req.body.filePath) + uuid() + constants.ZIP_EXTENSION;
+        // Directory found
+        downloadPath = constants.ZIP_PATH + path.basename(req.body.filePath) + uuid() + ".zip";
         zipFolder.zipFolder(req.body.filePath, downloadPath, (zipError) => {
             if(zipError) {
-                console.log("oh no!\n", zipError);
-                return res.sendStatus(500)
+                // Error compressing file
+                logger.error(`Error compressing folder - '${req.body.filePath}'. Err - ${zipError}`);
+                return res.status(500).json({"error": "Internal server error."});
             } 
             res.download(downloadPath, function(downloadError) {
                 if(downloadError) {
-                    console.log("Error in downloading file.\n", downloadError);
-                    return res.sendStatus(500);
+                    // Error downloading file
+                    logger.error(`Error downloading file - '${downloadPath}'. Error - '${downloadError}'`);
+                    return res.status(500).json({"error": "Internal server error."});
                 }
                 fs.unlink(downloadPath, () => {
-                    console.log("File Deleted : ", downloadPath);
+                    // Deleting compressed file after download
+                    logger.info(`Deleting file after download - '${donwloadPath}'`)
                 });            
             });
         });
     } else {
+        // Single file found - Not being compressed
         res.download(req.body.filePath, function(downloadError) {
-            if(downloadError) 
-                console.log("Error in downloading file.", downloadError);
-                return res.sendStatus(500);
-        });
-    }
-});
-
-
-// Upload files.
-router.post("/upload", checkAuthentication, (req, res) => {
-    if( fs.existsSync(req.body.filePath + "/" + req.files.uploadedFile.name) ) {
-        res.sendStatus(403);
-    } else {
-        getSize(req.body.token.path, function(error, size) {
-            if(error) {
-                console.log("Error Uploading file", error);
-                return res.statusCode(500);
-            } else if((size / 1024 / 1024).toFixed(2) + req.files.uploadedFile.size <= 100) {
-                req.files.uploadedFile.mv(req.body.filePath + "/" + req.files.uploadedFile.name, function(err, success) {
-                    if(err) {
-                        console.log("Error saving file to structure", error);
-                        return res.statusCode(500);
-                    }
-                    console.log("File saved to structure");
-                    return res.send("Success");
-                });
-            } else {
-                console.log("Threshold Reached");
-                res.statusCode(400);
-                return res.send("User Save Limit Reached");
+            if(downloadError) {
+                logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
+                return res.status(500).json({"error": "Internal server error."});
             }
         });
     }
 });
 
 
-// Check for authentication.
-function checkAuthentication(req, res, next) {
-    if(typeof(req.headers["authorization"]) !== "undefined") {
-        const token = req.headers["authorization"].split(" ")[1];
-        req.body.token = jwt.verify(token, constants.SECRET_KEY);
-        if(typeof(req.body.filePath) !== "undefined") {
-            if( !checkPath( req.body.filePath.split("/"), req.body.token.path.split("/")))
-                return res.sendStatus(403);
-        }
-        next();
+// Upload files.
+router.post("/upload", utility.checkAuthentication, (req, res) => {
+    if( !fs.existsSync(req.body.filePath) ) {
+        // Check if parent directory exists
+        logger.warn(`Parent directory does not exists - '${req.body.filePath}'`);
+        return res.status(403).json({"error": "Missing parent directory"});
+    } else if( fs.existsSync(path.join(req.body.filePath, req.files.uploadedFile.name)) ) {
+        // File with similar name already exists
+        logger.info(`File with name - '${path.join(req.body.filePath, req.files.uploadedFile.name)}' already exists`);
+        return res.status(403).json({"error": "File with similar name already exists!"});
     } else {
-        return res.sendStatus(403);
+        User.findOne({email: req.body.token.email}, (err, user) => {
+            if(err) {
+                logger.info(`Error communicating with database - '${err}'`);
+                return res.status(500).json({"error": "Internal server error. Contact System Administrator"});
+            } else if(user) {
+                // Evaluating storage
+                if( user.storage + req.files.uploadedFile.size > user.storageLimit ) {
+                    logger.warn(`User upload failed. Storage limit reached - '${user.storage}/${user.storageLimit}'`);
+                    return res.status(400).json({
+                        "error": "User storage Limit Reached. [Values in bytes]",
+                        "storage": user.storage,
+                        "storageLimit": user.storageLimit,
+                        "fileSize": req.files.uploadedFile.size
+                    });
+                }
+                // Saving file to user directory
+                req.files.uploadedFile.mv(path.join(req.body.filePath, req.files.uploadedFile.name), (err) => {
+                    if(err) {
+                        logger.error(`Error saving file to structure at '${filePath}'. Error - '${error}`);
+                        return res.status(500).json({"error": "Internal server error. Contact System Administrator"});
+                    }
+                    logger.info(`User file uploaded successfully - '${req.body.filePath}'`);
+                    return res.sendStatus(200);
+                });
+            } else {
+                loggger.info(`No such user - '${req.body.token.email}`);
+                return res.status(404).json({"error": "Invalid username/password. Please re-login"}); 
+            }
+        });
     }
-}
+});
 
 
-// Check permission for file.
-function checkPath(path, userHome) {
-    for(var i=0; i<userHome.length; i++) {
-        if(path[i] !== userHome[i])
-            return false;
+// Update user storage limit
+router.post("/storageLimit", utility.checkAuthentication, (req, res) => {
+    if(req.body.token.admin) {
+        User.findOne({email: req.body.email}, (err, usr)=> {
+            if(err) {
+                logger.error(`Error querring DB - '${err}`);
+                return res.status(500).json({"error": "Internal server error. Contact System Administrator"});
+            } else if(usr) {
+                logger.info(`Updating (${usr.email}) storage limit ${usr.storageLimit}=>${req.body.storageLimit}`);
+                usr.storageLimit = req.body.storageLimit;
+                usr.save( (saveError) => {
+                    if(saveError) {
+                        logger.info(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
+                        return res.status(500).json({"error": "Internal server error. Contact System Administrator"});
+                    } 
+                    return res.sendStatus(200);
+                });
+                return res.status(200);
+            } else {
+
+            }
+        });
+    } else {
+        logger.warn(`Non-admin user tried updating user storage - '${req.body.token.email}`);
+        return res.status(401).json({"error": "Unauthorized user. Admin credentials required."});
     }
-    return true;
-}
+});
 
-
-// Get File Extension.
-function getFileExtension(fileName) {
-    var ext = path.extname(fileName||"").split(".");
-    return ext[ext.length - 1];
-}
 
 module.exports = router;

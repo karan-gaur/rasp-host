@@ -1,12 +1,11 @@
-var mongoose = require('mongoose');
-var bcrypt = require('bcrypt')
+const mongoose = require('mongoose');
+const config = require('../config')
 
 var userSchema = new mongoose.Schema({
     email : {
         type : String,
         unique : true,
-        required : true,
-        immutable: true
+        required : true
     },
     name : {
         type : String,
@@ -17,15 +16,22 @@ var userSchema = new mongoose.Schema({
         required: true
     },
     path : {
-        type : String,
-        required : true,
-        immutable : true
+        type : Array,
+        required : true
+    },
+    admin : {
+        type : Boolean,
+        Default : false
+    },
+    storage : {
+        type : Number,
+        Default : 0
+    },
+    storageLimit : {
+        type : Number,
+        Default : config.USER_STORAGE_LIMIT
     }
 });
-
-userSchema.methods.setPath = function(path) {
-    this.path = path;
-}
 
 userSchema.methods.setHash = function(hash) {
     this.hash = hash;
