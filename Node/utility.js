@@ -1,10 +1,9 @@
 const fs = require("fs");
 const path = require("path");
 const jwt = require("jsonwebtoken");
-const config = require("./config")
+const config = require("./config");
 const constants = require("./constants");
-const logger = constants.LOGGER
-
+const logger = constants.LOGGER;
 
 /**
  * User API authentication check.
@@ -13,19 +12,19 @@ const logger = constants.LOGGER
  * @param {*} next Callback
  */
 function checkAuthentication(req, res, next) {
-    if(typeof(req.headers["authorization"]) !== "undefined") {
+    if (typeof req.headers["authorization"] !== "undefined") {
         // Validating AUTH token
         const token = req.headers["authorization"].split(" ")[1];
         try {
             req.body.token = jwt.verify(token, config.SECRET_KEY);
-        } catch(err) {
-            logger.error(`Error verifying JWT from request. Err - ${err}`)
-            return res.status(401).json({"error": "JWT Token unauthorised - reissue required."});
+        } catch (err) {
+            logger.error(`Error verifying JWT from request. Err - ${err}`);
+            return res.status(401).json({ error: "JWT Token unauthorised - reissue required." });
         }
-        if(typeof(req.body.path) !== "undefined") {
-            if( req.body.path.includes("..")) {
+        if (typeof req.body.path !== "undefined") {
+            if (req.body.path.includes("..")) {
                 logger.warn(`Found '..' usage in directory path - '${req.body.path}`);
-                return res.status(400).json({"error": constants.GUIDELINES});
+                return res.status(400).json({ error: "Illegal parameter usage - '..'" });
             }
             req.body.filePath = path.join(req.body.token.path.join(path.sep), req.body.path.join(path.sep));
         }
@@ -33,10 +32,9 @@ function checkAuthentication(req, res, next) {
     } else {
         // No Auth token found
         logger.warn("Missing request auth token.");
-        return res.status(403).json({"error": "Missing auth token. Login again."});
+        return res.status(403).json({ error: "Missing auth token. Login again." });
     }
 }
-
 
 /**
  * Evaluate folder size in Bytes
@@ -45,25 +43,22 @@ function checkAuthentication(req, res, next) {
  * @returns {number}
  */
 function getFolderSize(dirPath) {
-    if(!fs.existsSync(dirPath)) {
+    if (!fs.existsSync(dirPath)) {
         throw `No such file/folder - '${dirPath}'`;
-    } else if(fs.lstatSync(dirPath).isFile()) {
-        return fs.statSync(dirPath).size;
     }
+    stats = fs.lstatSync(dirPath);
+    if (stats.isFile()) return stats.size;
 
-    files = fs.readdirSync(dirPath);
-    totalFolderSize = 0
+    fileArray = fs.readdirSync(dirPath);
+    totalFolderSize = stats.size;
 
-    files.forEach((file) => {
-        if(fs.lstatSync(path.join(dirPath, file)).isDirectory()) {
-            totalFolderSize += getFolderSize(path.join(dirPath, file));
-        } else {
-            totalFolderSize += fs.statSync(path.join(dirPath, file)).size;
-        }
+    fileArray.forEach((file) => {
+        stats = fs.lstatSync(path.join(dirPath, file));
+        if (stats.isDirectory()) totalFolderSize += getFolderSize(path.join(dirPath, file));
+        else totalFolderSize += stats.size;
     });
     return totalFolderSize;
 }
-
 
 /**
  * Get extenstion of the given file.
@@ -71,12 +66,12 @@ function getFolderSize(dirPath) {
  * @returns {string}
  */
 function getFileExtension(fileName) {
-    var ext = path.extname(fileName||"").split(".");
+    var ext = path.extname(fileName || "").split(".");
     return ext[ext.length - 1];
 }
 
-module.exports = { 
-    checkAuthentication : checkAuthentication,
-    getFolderSize : getFolderSize,
-    getFileExtension : getFileExtension
-}
+module.exports = {
+    checkAuthentication: checkAuthentication,
+    getFolderSize: getFolderSize,
+    getFileExtension: getFileExtension,
+};

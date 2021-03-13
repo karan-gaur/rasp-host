@@ -1,7 +1,8 @@
 "use strict";
+
 const winston = require("winston");
-const path = require('path')
-require('winston-daily-rotate-file');
+const path = require("path");
+require("winston-daily-rotate-file");
 
 module.exports = {
     ZIP: ".zip",
@@ -9,22 +10,22 @@ module.exports = {
     TEMP_FOLDER_PATH: path.join(__dirname, "public", "temp"),
     LOGGER: winston.createLogger({
         transports: [
-            new (winston.transports.DailyRotateFile)({
+            new winston.transports.DailyRotateFile({
                 level: "info",
                 filename: path.join(__dirname, "logs", "raspHost-%DATE%.log"),
                 handleExceptions: true,
                 frequency: "1d",
                 zippedArchive: true,
                 maxSize: "20m",
-                maxFiles: "30d"
+                maxFiles: "30d",
             }),
-            new (winston.transports.Console)({
-                level: 'debug',
+            new winston.transports.Console({
+                level: "debug",
                 handleExceptions: true,
-                colorize: true, 
-                json: false
-            })
+                colorize: true,
+                json: false,
+            }),
         ],
-        exitOnError: false
-    })
+        exitOnError: false,
+    }),
 };
