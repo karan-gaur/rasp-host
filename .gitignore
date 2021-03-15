@@ -31,3 +31,4 @@ yarn-error.log*
 
 # Custom files
 /improvements
+/Node/nodemon.json
