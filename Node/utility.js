@@ -12,6 +12,10 @@ const logger = constants.LOGGER;
  * @param {*} next Callback
  */
 function checkAuthentication(req, res, next) {
+    if (typeof req.body === "undefined") {
+        // Adding empty body for Get requests
+        req.body = {};
+    }
     if (typeof req.headers["authorization"] !== "undefined") {
         // Validating AUTH token
         const token = req.headers["authorization"].split(" ")[1];
@@ -33,6 +37,27 @@ function checkAuthentication(req, res, next) {
         // No Auth token found
         logger.warn("Missing request auth token.");
         return res.status(403).json({ error: "Missing auth token. Login again." });
+    }
+}
+
+/**
+ * User API authorization check.
+ * @param {ReqBody} req User API request object
+ * @param {ResBody} res User API response object
+ * @param {*} next Callback
+ */
+function checkAuthorization(req, res, next) {
+    if (req.body.token.admin) {
+        // Check if user has privilege admin access
+        logger.info(
+            `User authorized access - '/status' - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
+        );
+        next();
+    } else {
+        logger.error(
+            `Unauthorized access - '/status' - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
+        );
+        return res.status(404).json({ error: "URL does not exists" });
     }
 }
 
@@ -72,6 +97,7 @@ function getFileExtension(fileName) {
 
 module.exports = {
     checkAuthentication: checkAuthentication,
+    checkAuthorization: checkAuthorization,
     getFolderSize: getFolderSize,
     getFileExtension: getFileExtension,
 };
