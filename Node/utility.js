@@ -62,6 +62,50 @@ function checkAuthorization(req, res, next) {
 }
 
 /**
+ * Verify user password for additional security.
+ * @param {ReqBody} req User API request object
+ * @param {ResBody} res User API response object
+ * @param {*} next Callback
+ */
+function verifyPassword(req, res, next) {
+    if (typeof req.body.password === "undefined") {
+        logger.error(`Missing parameter 'password' for verifyPassword with token email - '${req.body.token.email}'`);
+        return res.status(400).json({ error: "Missing paramter in request body - 'password'." });
+    }
+
+    // Verifying user password
+    User.findOne({ email: req.body.token.email }, (err, usr) => {
+        if (err) {
+            // Error fetching from DB
+            logger.error(`Error fetching user details from DB - ${err}`);
+            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+        } else if (usr) {
+            try {
+                // User Exists
+                bcrypt.compareSync(req.body.password, usr.getHash(), (resolve) => {
+                    if (!resolve) {
+                        // Invalid Password
+                        logger.info(`Invalid Password for - '${req.body.email}'`);
+                        return res.status(401).json({ error: "Invalid username/password" });
+                    } else {
+                        // Login Successful
+                        logger.info(`User password verfied - '${req.body.email}'`);
+                    }
+                });
+                next();
+            } catch (err) {
+                logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
+                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            }
+        } else {
+            // No such user
+            logger.info(`No user with username - '${req.body.email}'`);
+            return res.status(401).json({ error: "Invalid username/password" });
+        }
+    });
+}
+
+/**
  * Evaluate folder size in Bytes
  * @param {String} dirPath
  * @throws Will throw an error if file does not exists
@@ -98,6 +142,7 @@ function getFileExtension(fileName) {
 module.exports = {
     checkAuthentication: checkAuthentication,
     checkAuthorization: checkAuthorization,
+    verifyPassword: verifyPassword,
     getFolderSize: getFolderSize,
     getFileExtension: getFileExtension,
 };
