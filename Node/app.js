@@ -38,7 +38,7 @@ mongoose.connect(
     { useUnifiedTopology: true, useCreateIndex: true, useNewUrlParser: true },
     (err) => {
         if (err) {
-            logger.error("DB Connection failed {err}", { err });
+            logger.error(`DB Connection failed ${err}`);
         } else {
             logger.info("DB Connection established");
         }
@@ -61,9 +61,9 @@ app.use("/", hostRouter);
 app.use("/", authRouter);
 app.use("/", fileOpsRouter);
 
-// Catch 404 and forward to error handler.
+// Catch and report 404 page requests
 app.use(function (req, res) {
-    logger.warn(`404 Error Request - ${req.body}`);
+    logger.warn(`404 Error Request - ${req}`);
     return res.status(404).json({ error: "URL does not exists" });
 });
 
