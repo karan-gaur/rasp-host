@@ -144,6 +144,36 @@ router.post(
     }
 );
 
+// Delete User
+router.post("/self/delete", [utility.checkAuthentication, utility.verifyPassword], (req, res) => {
+    try {
+        if (
+            typeof req.body.delData === "undefined" ||
+            (String(req.body.delData).toUpperCase() !== "TRUE" && String(req.body.delData).toUpperCase() !== "FALSE")
+        ) {
+            // Invalid arguement parsed - req.body.delData
+            logger.error(`Invalid/Missing value for body param - { delData: ${req.body.delData} }. Must be Boolean.`);
+            return res
+                .status(422)
+                .json({ error: "Invalid value for delData - '" + req.body.delData + "'. Required - BOOLEAN" });
+        }
+        if (String(req.body.delData).toUpperCase() === "TRUE") {
+            // Deleting user directory
+            fs.rmSync(req.body.token.path.join(path.sep), { recursive: true });
+            logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
+        }
+
+        // Deleting user from DB
+        User.deleteOne({ email: req.body.token.email }).then(() => {
+            logger.info(`User deleted from DB - '${req.body.token.email}`);
+            return res.sendStatus(200);
+        });
+    } catch (err) {
+        logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+    }
+});
+
 // GET Contact Us page.
 router.post("/contact", (req, res) => {
     // Mailing client details
