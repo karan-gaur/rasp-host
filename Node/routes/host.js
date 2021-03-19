@@ -10,7 +10,7 @@ const logger = constants.LOGGER;
 // Update user storage limit
 router.post("/storageLimit", utility.checkAuthentication, (req, res) => {
     if (req.body.token.admin) {
-        User.findOne({ email: req.body.email }, (err, usr) => {
+        User.findOne({ email: req.body.email }).then((usr) => {
             if (err) {
                 logger.error(`Error querring DB - '${err}`);
                 return res.status(500).json({

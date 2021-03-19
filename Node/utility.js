@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const config = require("./config");
 const constants = require("./constants");
@@ -36,7 +37,7 @@ function checkAuthentication(req, res, next) {
     } else {
         // No Auth token found
         logger.warn("Missing request auth token.");
-        return res.status(403).json({ error: "Missing auth token. Login again." });
+        return res.status(404).json({ error: "URL does not exists" });
     }
 }
 
@@ -58,6 +59,46 @@ function checkAuthorization(req, res, next) {
             `Unauthorized access - '/status' - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
         );
         return res.status(404).json({ error: "URL does not exists" });
+    }
+}
+
+/**
+ * Verify user password for additional security.
+ * @param {ReqBody} req User API request object
+ * @param {ResBody} res User API response object
+ * @param {*} next Callback
+ */
+function verifyPassword(req, res, next) {
+    if (typeof req.body.password === "undefined") {
+        logger.error(`Missing parameter 'password' for verifyPassword with token email - '${req.body.token.email}'`);
+        return res.status(400).json({ error: "Missing paramter in request body - 'password'." });
+    }
+
+    try {
+        // Verifying user password
+        User.findOne({ email: req.body.token.email }).then((usr) => {
+            if (usr) {
+                // User Exists
+                bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
+                    if (!resolve) {
+                        // Invalid Password
+                        logger.info(`Invalid Password for - '${req.body.email}'`);
+                        return res.status(401).json({ error: "Invalid username/password" });
+                    } else {
+                        // Login Successful
+                        logger.info(`User password verfied - '${req.body.email}'`);
+                        next();
+                    }
+                });
+            } else {
+                // No such user
+                logger.info(`No user with username - '${req.body.email}'`);
+                return res.status(401).json({ error: "Invalid username/password" });
+            }
+        });
+    } catch (err) {
+        logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
 }
 
@@ -98,6 +139,7 @@ function getFileExtension(fileName) {
 module.exports = {
     checkAuthentication: checkAuthentication,
     checkAuthorization: checkAuthorization,
+    verifyPassword: verifyPassword,
     getFolderSize: getFolderSize,
     getFileExtension: getFileExtension,
 };

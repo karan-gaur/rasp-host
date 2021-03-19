@@ -137,13 +137,8 @@ router.post("/upload", utility.checkAuthentication, (req, res) => {
             );
             return res.status(403).json({ error: "File with similar name already exists!" });
         } else {
-            User.findOne({ email: req.body.token.email }, (err, usr) => {
-                if (err) {
-                    logger.error(`Error communicating with database - '${err}'`);
-                    return res.status(500).json({
-                        error: "Internal server error. Contact System Administrator",
-                    });
-                } else if (usr) {
+            User.findOne({ email: req.body.token.email }).then((usr) => {
+                if (usr) {
                     // Evaluating storage
                     if (usr.storage + req.files.uploadedFile.size > usr.storageLimit) {
                         logger.error(
@@ -212,7 +207,7 @@ router.post("/create", utility.checkAuthentication, (req, res) => {
         logger.error(`File with name - '${path.join(req.body.filePath, req.body.fName)}' already exists`);
         return res.status(403).json({ error: "File/Folder with similar name already exists!" });
     } else {
-        User.findOne({ email: req.body.token.email }, (err, usr) => {
+        User.findOne({ email: req.body.token.email }).then((usr) => {
             if (err) {
                 logger.error(`Error communicating with database - '${err}'`);
                 return res.status(500).json({
@@ -316,7 +311,7 @@ router.delete("/delete", utility.checkAuthentication, (req, res) => {
             });
         }
 
-        User.findOne({ email: req.body.token.email }, (err, usr) => {
+        User.findOne({ email: req.body.token.email }).then((usr) => {
             if (err) {
                 logger.error(`Error connecting with database - '${err}'`);
                 return res.status(500).json({
