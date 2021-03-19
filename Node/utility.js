@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const config = require("./config");
 const constants = require("./constants");
@@ -36,7 +37,7 @@ function checkAuthentication(req, res, next) {
     } else {
         // No Auth token found
         logger.warn("Missing request auth token.");
-        return res.status(403).json({ error: "Missing auth token. Login again." });
+        return res.status(404).json({ error: "URL does not exists" });
     }
 }
 
@@ -73,16 +74,12 @@ function verifyPassword(req, res, next) {
         return res.status(400).json({ error: "Missing paramter in request body - 'password'." });
     }
 
-    // Verifying user password
-    User.findOne({ email: req.body.token.email }, (err, usr) => {
-        if (err) {
-            // Error fetching from DB
-            logger.error(`Error fetching user details from DB - ${err}`);
-            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
-        } else if (usr) {
-            try {
+    try {
+        // Verifying user password
+        User.findOne({ email: req.body.token.email }).then((usr) => {
+            if (usr) {
                 // User Exists
-                bcrypt.compareSync(req.body.password, usr.getHash(), (resolve) => {
+                bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
                     if (!resolve) {
                         // Invalid Password
                         logger.info(`Invalid Password for - '${req.body.email}'`);
@@ -90,19 +87,19 @@ function verifyPassword(req, res, next) {
                     } else {
                         // Login Successful
                         logger.info(`User password verfied - '${req.body.email}'`);
+                        next();
                     }
                 });
-                next();
-            } catch (err) {
-                logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
-                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            } else {
+                // No such user
+                logger.info(`No user with username - '${req.body.email}'`);
+                return res.status(401).json({ error: "Invalid username/password" });
             }
-        } else {
-            // No such user
-            logger.info(`No user with username - '${req.body.email}'`);
-            return res.status(401).json({ error: "Invalid username/password" });
-        }
-    });
+        });
+    } catch (err) {
+        logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+    }
 }
 
 /**
