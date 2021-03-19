@@ -174,6 +174,54 @@ router.post("/self/delete", [utility.checkAuthentication, utility.verifyPassword
     }
 });
 
+router.post(
+    "/admin/delete",
+    [utility.checkAuthentication, utility.checkAuthorization, utility.verifyPassword],
+    (req, res) => {
+        try {
+            // Validating Body Params
+            if (typeof req.body.email === "undefined") {
+                logger.error(`Missing body attribute 'email' for '/admin/delete. User - '${req.body.token.email}'`);
+                return res.status(400).json({ error: "Missing body attribute 'email" });
+            } else if (
+                typeof req.body.delData === "undefined" ||
+                (String(req.body.delData).toUpperCase() !== "TRUE" &&
+                    String(req.body.delData).toUpperCase() !== "FALSE")
+            ) {
+                // Invalid arguement parsed - req.body.delData
+                logger.error(
+                    `Invalid/Missing value for body param - { delData: ${req.body.delData} }. Must be Boolean.`
+                );
+                return res
+                    .status(422)
+                    .json({ error: "Invalid value for delData - '" + req.body.delData + "'. Required - BOOLEAN" });
+            }
+
+            // Deleting user
+            User.findOne({ email: req.body.email }).then((usr) => {
+                if (usr) {
+                    if (String(req.body.delData).toUpperCase() === "TRUE") {
+                        // Deleting user directory
+                        fs.rmSync(usr.path.join(path.sep), { recursive: true });
+                        logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
+                    }
+
+                    // Deleting user from DB
+                    usr.remove();
+                    return res.sendStatus(200);
+                } else {
+                    // No such user
+                    logger.info(`No user with username - '${req.body.email}'`);
+                    return res.status(404).json({ error: "Invalid username. No such user exists" });
+                }
+            });
+        } catch (err) {
+            logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
+            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+        }
+    }
+);
+
 // GET Contact Us page.
 router.post("/contact", (req, res) => {
     // Mailing client details
