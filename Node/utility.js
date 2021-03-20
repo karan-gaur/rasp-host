@@ -51,12 +51,12 @@ function checkAuthorization(req, res, next) {
     if (req.body.token.admin) {
         // Check if user has privilege admin access
         logger.info(
-            `User authorized access - '/status' - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
+            `User authorized 'admin' access - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
         );
         next();
     } else {
         logger.error(
-            `Unauthorized access - '/status' - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
+            `Unauthorized 'admin' access failed - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
         );
         return res.status(404).json({ error: "URL does not exists" });
     }
