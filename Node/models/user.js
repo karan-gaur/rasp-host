@@ -21,15 +21,15 @@ var userSchema = new mongoose.Schema({
     },
     admin: {
         type: Boolean,
-        Default: false,
+        default: false,
     },
     storage: {
         type: Number,
-        Default: 0,
+        default: 0,
     },
     storageLimit: {
         type: Number,
-        Default: config.USER_STORAGE_LIMIT,
+        default: config.USER_STORAGE_LIMIT,
     },
 });
 
