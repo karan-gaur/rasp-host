@@ -5,10 +5,12 @@ var userSchema = new mongoose.Schema({
     email: {
         type: String,
         unique: true,
+        maxLength: 256,
         required: true,
     },
     name: {
         type: String,
+        maxLength: 32,
         required: true,
     },
     hash: {
