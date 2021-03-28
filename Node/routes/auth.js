@@ -15,17 +15,18 @@ const transport = nodemailer.createTransport(config.mailer);
 
 // Login
 router.post("/login", async (req, res) => {
-    try {
-        // Validating Params
-        if (typeof req.body.email !== "string" || typeof req.body.password !== "string") {
-            logger.error(`Missing body params Username/Password`);
-            return res.status(400).json({ error: "Invalid/Missing required values - username/password [String]." });
-        }
+    // Validating Params
+    if (typeof req.body.email !== "string" || typeof req.body.password !== "string") {
+        logger.error(`Missing body params Username/Password`);
+        return res.status(400).json({ error: "Invalid/Missing required values - username/password [String]." });
+    }
 
-        const usr = await User.findOne({ email: req.body.email }).exec();
-        if (usr) {
-            // User Exists
-            await bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
+    const usr = await User.findOne({ email: req.body.email }).exec();
+    if (usr) {
+        // User Exists
+        bcrypt
+            .compare(req.body.password, usr.hash)
+            .then((resolve) => {
                 if (!resolve) {
                     // Invalid Password
                     logger.info(`Invalid Password for - '${req.body.email}'`);
@@ -62,15 +63,15 @@ router.post("/login", async (req, res) => {
                     }
                     return res.json({ token: token, path: [], name: usr.name, admin: usr.admin });
                 }
+            })
+            .catch((err) => {
+                logger.error(`Error logging in user - '${req.body.token.email}'. Error - ${err}`);
+                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
             });
-        } else {
-            // No such user
-            logger.info(`No user with username - '${req.body.email}'`);
-            return res.status(404).json({ error: "Invalid username/password. Please re-login" });
-        }
-    } catch (err) {
-        logger.error(`Error logging in user - '${req.body.token.email}'. Error - ${err}`);
-        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+    } else {
+        // No such user
+        logger.info(`No user with username - '${req.body.email}'`);
+        return res.status(404).json({ error: "Invalid username/password. Please re-login" });
     }
 });
 
@@ -151,22 +152,20 @@ router.post(
             }
 
             // Encryting password and saving in the Database
-            await bcrypt.hash(req.body.user_pass, 10).then((hashPwd) => {
-                new_user.hash = hashPwd;
-                new_user.save((saveError) => {
-                    if (saveError && saveError.code === 11000) {
-                        logger.info(`Duplicate key found - '${new_user.email}`);
-                        return res.status(409).json({
-                            error: "Duplicate 'email' parameter. User already exists",
-                        });
-                    } else if (saveError) {
-                        logger.error(`Error saving new user - '${new_user.email}. Err - ${saveError}`);
-                        return res.status(500).json({
-                            error: "Internal server error. Contact System Administrator",
-                        });
-                    }
-                    return res.sendStatus(200);
-                });
+            new_user.hash = await bcrypt.hash(req.body.user_pass, 10);
+            new_user.save((saveError) => {
+                if (saveError && saveError.code === 11000) {
+                    logger.info(`Duplicate key found - '${new_user.email}`);
+                    return res.status(409).json({
+                        error: "Duplicate 'email' parameter. User already exists",
+                    });
+                } else if (saveError) {
+                    logger.error(`Error saving new user - '${new_user.email}. Err - ${saveError}`);
+                    return res.status(500).json({
+                        error: "Internal server error. Contact System Administrator",
+                    });
+                }
+                return res.sendStatus(200);
             });
         } catch (err) {
             logger.error(`Error registering user from admin - '${req.body.token.email}'. Error - ${err}`);
@@ -192,10 +191,9 @@ router.post("/self/delete", [utility.checkAuthentication, utility.verifyPassword
         }
 
         // Deleting user from DB
-        await User.deleteOne({ email: req.body.token.email }).then(() => {
-            logger.info(`User deleted from DB - '${req.body.token.email}`);
-            return res.sendStatus(200);
-        });
+        await User.deleteOne({ email: req.body.token.email });
+        logger.info(`User deleted from DB - '${req.body.token.email}`);
+        return res.sendStatus(200);
     } catch (err) {
         logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
         return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
@@ -223,23 +221,22 @@ router.post(
             }
 
             // Deleting user
-            await User.findOne({ email: req.body.email }).then((usr) => {
-                if (usr) {
-                    if (req.body.delData) {
-                        // Deleting user directory
-                        fs.rmSync(usr.path.join(path.sep), { recursive: true });
-                        logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
-                    }
-
-                    // Deleting user from DB
-                    usr.remove();
-                    return res.sendStatus(200);
-                } else {
-                    // No such user
-                    logger.info(`No user with username - '${req.body.email}'`);
-                    return res.status(404).json({ error: "Invalid email. No such user exists" });
+            const usr = await User.findOne({ email: req.body.email });
+            if (usr) {
+                if (req.body.delData) {
+                    // Deleting user directory
+                    fs.rmSync(usr.path.join(path.sep), { recursive: true });
+                    logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
                 }
-            });
+
+                // Deleting user from DB
+                usr.remove();
+                return res.sendStatus(200);
+            } else {
+                // No such user
+                logger.info(`No user with username - '${req.body.email}'`);
+                return res.status(404).json({ error: "Invalid email. No such user exists" });
+            }
         } catch (err) {
             logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
             return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
