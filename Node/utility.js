@@ -32,6 +32,8 @@ function checkAuthentication(req, res, next) {
                 return res.status(400).json({ error: "Illegal parameter usage - '..'" });
             }
             req.body.filePath = path.join(req.body.token.path.join(path.sep), req.body.path.join(path.sep));
+        } else {
+            req.body.path = [];
         }
         next();
     } else {
@@ -51,7 +53,7 @@ function checkFilePath(req, res, next) {
     if (typeof req.body.filePath !== "string" || !fs.existsSync(req.body.filePath)) {
         // Directory does not exists
         logger.error(`No such file/folder exists - ${req.body.filePath}`);
-        return res.status(400).json({ error: "No such file/folder exists - '" + req.body.filePath + "'" });
+        return res.status(400).json({ error: "No such file/folder exists - '" + req.body.path.join(path.sep) + "'" });
     }
     next();
 }

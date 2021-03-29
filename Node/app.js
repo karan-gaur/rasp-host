@@ -4,11 +4,11 @@ const express = require("express");
 const mongoose = require("mongoose");
 const fileUpload = require("express-fileupload");
 const config = require("./config");
+const utility = require("./utility");
 const constants = require("./constants");
 const hostRouter = require("./routes/host");
 const authRouter = require("./routes/auth");
 const fileOpsRouter = require("./routes/fileOps");
-const utility = require("./utility");
 
 const app = express();
 const logger = constants.LOGGER;
