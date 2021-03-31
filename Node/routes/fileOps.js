@@ -2,7 +2,6 @@ const fs = require("fs");
 const path = require("path");
 const uuid = require("uuid/v1");
 const express = require("express");
-const zipFolder = require("zip-a-folder");
 
 const utility = require("../utility");
 const constants = require("../constants");
@@ -77,48 +76,40 @@ router.post("/", [utility.checkAuthentication, utility.checkFilePath], (req, res
 });
 
 // Download files.
-router.post("/download", [utility.checkAuthentication, utility.checkFilePath], (req, res) => {
+router.post("/download", [utility.checkAuthentication, utility.checkFilePath], async (req, res) => {
     try {
-        if (fs.lstatSync(req.body.filePath).isDirectory()) {
+        let downloadPath = req.body.filePath;
+        let isDir = fs.lstatSync(req.body.filePath).isDirectory();
+        if (isDir) {
             // Directory found
-            downloadPath = constants.ZIP_PATH + path.basename(req.body.filePath) + uuid() + ".zip";
-            zipFolder.zipFolder(req.body.filePath, downloadPath).then( () => {
-                res.download(downloadPath, function (downloadError) {
-                    if (downloadError) {
-                        // Error downloading file
-                        logger.error(`Error downloading file - '${downloadPath}'. Error - '${downloadError}'`);
-                        return res.status(500).json({ error: "Internal server error." });
-                    }
-                    fs.unlink(downloadPath, () => {
-                        // Deleting compressed file after download
-                        logger.info(`Deleted file after download - '${donwloadPath}'`);
-                    });
-                });
-            }).catch( (err) => {
-                    // Error compressing file
-                    logger.error(`Error compressing folder - '${req.body.filePath}'. Err - ${err}`);
-                    return res.status(500).json({ error: "Internal server error." });
-            }
-                
-        } else {
-            // Single file found - Not being compressed
-            res.download(req.body.filePath, function (downloadError) {
-                if (downloadError) {
-                    logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
-                    return res.status(500).json({ error: "Internal server error." });
-                }
-            });
+            downloadPath = path.join(constants.DATA_DUMP, path.basename(req.body.filePath) + "-" + uuid() + ".zip");
+            await utility.zipFolder(req.body.filePath, downloadPath);
         }
+
+        // Downloading file (Compressed if directory)
+        await res.download(downloadPath, function (downloadError) {
+            if (downloadError) {
+                logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
+                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            } else if (isDir) {
+                fs.unlinkSync(downloadPath);
+                logger.info(`Deleted file after download - '${downloadPath}'`);
+            }
+        });
     } catch (err) {
-        logger.error(`Error compressing folder - '${req.body.filePath}'. Err - ${zipError}`);
-        return res.status(500).json({ error: "Internal server error." });
+        logger.error(`Error downloading/compressing folder - '${req.body.filePath}'. Err - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
 });
 
 // Upload files.
-router.post("/upload", utility.checkAuthentication, (req, res) => {
+router.post("/upload", utility.checkAuthentication, async (req, res) => {
     try {
-        if (!fs.existsSync(req.body.filePath)) {
+        // Validating params
+        if (!req.files || !req.files.uploadedFile) {
+            logger.error(`Missing body param - 'uploadedFile`);
+            return res.status(400).json({ error: "Invalid/Missing required value - 'uploadedFile' [File]." });
+        } else if (!fs.existsSync(req.body.filePath)) {
             // Check if parent directory exists
             logger.error(`Parent directory does not exists - '${req.body.filePath}'`);
             return res.status(403).json({
@@ -131,57 +122,40 @@ router.post("/upload", utility.checkAuthentication, (req, res) => {
             );
             return res.status(403).json({ error: "File with similar name already exists!" });
         } else {
-            User.findOne({ email: req.body.token.email }).then((usr) => {
-                if (usr) {
-                    // Evaluating storage
-                    if (usr.storage + req.files.uploadedFile.size > usr.storageLimit) {
-                        logger.error(
-                            `User upload failed. Storage limit reached - '${usr.storage}/${usr.storageLimit}'`
-                        );
-                        return res.status(400).json({
-                            error: "User storage Limit Reached. [Values in bytes]",
-                            storage: user.storage,
-                            storageLimit: user.storageLimit,
-                            fileSize: req.files.uploadedFile.size,
-                        });
-                    }
-
-                    // Saving file to user directory
-                    req.files.uploadedFile.mv(path.join(req.body.filePath, req.files.uploadedFile.name), (err) => {
-                        if (err) {
-                            logger.error(`Error saving file to structure at '${filePath}'. Error - '${error}`);
-                            return res.status(500).json({
-                                error: "Internal server error. Contact System Administrator",
-                            });
-                        }
-                        logger.info(
-                            `User file uploaded successfully - '${path.join(
-                                req.body.filePath,
-                                req.files.uploadedFile.name
-                            )}'`
-                        );
-
-                        // Updating user storage
-                        usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.files.uploadedFile.name));
-                        usr.save((saveError) => {
-                            if (saveError) {
-                                logger.error(
-                                    `Error saving updated storage limit for '${usr.email}. Err - ${saveError}`
-                                );
-                                return res
-                                    .status(500)
-                                    .json({ error: "Internal server error. Contact System Administrator" });
-                            }
-                            return res.sendStatus(200);
-                        });
-                    });
-                } else {
-                    loggger.error(`No such user - '${req.body.token.email}`);
-                    return res.status(404).json({
-                        error: "Invalid username/password. Please re-login",
+            let usr = await User.findOne({ email: req.body.token.email }).exec();
+            if (usr) {
+                // Evaluating storage
+                if (usr.storage + req.files.uploadedFile.size > usr.storageLimit) {
+                    logger.error(`User upload failed. Storage limit reached - '${usr.storage}/${usr.storageLimit}'`);
+                    return res.status(400).json({
+                        error: "User storage Limit Reached. [Values in bytes]",
+                        storage: usr.storage,
+                        storageLimit: usr.storageLimit,
+                        fileSize: req.files.uploadedFile.size,
                     });
                 }
-            });
+
+                // Saving file to user directory
+                await req.files.uploadedFile.mv(path.join(req.body.filePath, req.files.uploadedFile.name));
+                logger.info(
+                    `User file uploaded successfully - '${path.join(req.body.filePath, req.files.uploadedFile.name)}'`
+                );
+
+                // Updating user storage
+                usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.files.uploadedFile.name));
+                await usr.save((saveError) => {
+                    if (saveError) {
+                        logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
+                        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+                    }
+                    return res.sendStatus(200);
+                });
+            } else {
+                logger.error(`No such user - '${req.body.token.email}`);
+                return res.status(404).json({
+                    error: "Invalid username/password. Please re-login",
+                });
+            }
         }
     } catch (err) {
         logger.error(`Error Uploading user file - ${err}`);
@@ -190,7 +164,7 @@ router.post("/upload", utility.checkAuthentication, (req, res) => {
 });
 
 // Create user file or directory
-router.post("/create", utility.checkAuthentication, (req, res) => {
+router.post("/create", utility.checkAuthentication, async (req, res) => {
     // Validating req body params
     if (typeof req.body.isFolder === "undefined" || typeof req.body.isFolder !== "boolean") {
         logger.error(`Bad value for parameter 'isFolder' in /create endpoint - '${req.body.fName}'`);
@@ -207,39 +181,29 @@ router.post("/create", utility.checkAuthentication, (req, res) => {
         logger.error(`File with name - '${path.join(req.body.filePath, req.body.fName)}' already exists`);
         return res.status(403).json({ error: "File/Folder with similar name already exists!" });
     } else {
-        User.findOne({ email: req.body.token.email }).then((usr) => {
-            if (err) {
-                logger.error(`Error communicating with database - '${err}'`);
-                return res.status(500).json({
-                    error: "Internal server error. Contact System Administrator",
-                });
-            } else if (usr) {
+        try {
+            let usr = await User.findOne({ email: req.body.token.email }).exec();
+            if (usr) {
                 // Evaluating storage
                 if (usr.storage >= usr.storageLimit) {
-                    logger.warn(`User upload failed. Storage limit reached - '${usr.storage}/${usr.storageLimit}'`);
+                    logger.warn(`Upload failed. Storage limit reached - '${usr.storage}/${usr.storageLimit}'`);
                     return res.status(400).json({
                         error: "User storage Limit Reached. [Values in bytes]",
                         storage: usr.storage,
                         storageLimit: usr.storageLimit,
                     });
                 }
-                try {
-                    if (req.body.isFolder) {
-                        // Creating user directory
-                        fs.mkdirSync(path.join(req.body.filePath, req.body.fName));
-                        logger.info(`Directory created - '${path.join(req.body.filePath, req.body.fName)}'`);
-                    } else {
-                        // Creating empty file
-                        fs.appendFileSync(path.join(req.body.filePath, req.body.fName), "");
-                        logger.info(`File created - '${path.join(req.body.filePath, req.body.fName)}'`);
-                    }
-                    usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.body.fName));
-                } catch (err) {
-                    logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
-                    return res.status(500).json({
-                        error: "Internal server error. Contact System Administrator",
-                    });
+                if (req.body.isFolder) {
+                    // Creating user directory
+                    fs.mkdirSync(path.join(req.body.filePath, req.body.fName));
+                    logger.info(`Directory created - '${path.join(req.body.filePath, req.body.fName)}'`);
+                } else {
+                    // Creating empty file
+                    fs.appendFileSync(path.join(req.body.filePath, req.body.fName), "");
+                    logger.info(`File created - '${path.join(req.body.filePath, req.body.fName)}'`);
                 }
+                usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.body.fName));
+
                 usr.save((saveError) => {
                     if (saveError) {
                         logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
@@ -255,7 +219,12 @@ router.post("/create", utility.checkAuthentication, (req, res) => {
                     error: "Invalid username/password. Please re-login",
                 });
             }
-        });
+        } catch (err) {
+            logger.error(`Error uploading file for '${usr.email}. Err - ${saveError}`);
+            return res.status(500).json({
+                error: "Internal server error. Contact System Administrator",
+            });
+        }
     }
 });
 
@@ -267,19 +236,18 @@ router.post("/rename", utility.checkAuthentication, (req, res) => {
             return res.status(403).json({
                 error: "Cannot update user's root direcotry - " + req.body.path.join(path.sep),
             });
-        }
-        if (!fs.existsSync(path.join(req.body.filePath))) {
-            // Check if parent directory exists
-            logger.error(`Parent directory does not exists - '${req.body.filePath}'`);
+        } else if (!fs.existsSync(path.join(req.body.filePath))) {
+            // Check if file/folder with given name exists
+            logger.error(`File/Directory does not exists - '${req.body.filePath}'`);
             return res.status(403).json({
-                error: "Missing parent directory - " + req.body.path.join(path.sep),
+                error: "Missing File/Directory - " + req.body.path.join(path.sep),
             });
         } else if (fs.existsSync(path.join(path.basename(req.body.filePath), req.body.updatedName))) {
             logger.error(
                 `Directory already exists - '${path.join(req.body.path.join(path.sep), req.body.updatedName)}'`
             );
             return res.status(403).json({
-                error: "Directory exists - " + path.join(req.body.path.join(path.sep), req.body.updatedName),
+                error: "File/Directory exists - " + path.join(req.body.path.join(path.sep), req.body.updatedName),
             });
         }
         fs.renameSync(req.body.filePath, path.join(path.dirname(req.body.filePath), req.body.updatedName));
@@ -296,7 +264,7 @@ router.post("/rename", utility.checkAuthentication, (req, res) => {
 });
 
 // Delete user file or directory
-router.delete("/delete", utility.checkAuthentication, (req, res) => {
+router.delete("/delete", utility.checkAuthentication, async (req, res) => {
     try {
         if (!fs.existsSync(req.body.filePath)) {
             logger.warn(`Delete failed. Missing directory - '${req.body.filePath}`);
@@ -308,37 +276,29 @@ router.delete("/delete", utility.checkAuthentication, (req, res) => {
             });
         }
 
-        User.findOne({ email: req.body.token.email }).then((usr) => {
-            if (err) {
-                logger.error(`Error connecting with database - '${err}'`);
-                return res.status(500).json({
-                    error: "Internal server error. Contact System Administrator",
-                });
-            } else if (usr) {
-                const fsize = utility.getFolderSize(req.body.filePath);
-                fs.rmSync(req.body.filePath, { recursive: true });
-                logger.info(`Deleted file/folder - '${req.body.filePath}'`);
-                usr.storage -= fsize;
-                usr.save((saveError) => {
-                    if (saveError) {
-                        logger.error(
-                            `Error updating user storage on deleting - '${req.body.filePath}. Err - ${saveError}`
-                        );
-                        return res.status(500).json({
-                            error: "Internal server error. Contact System Administrator",
-                        });
-                    } else {
-                        logger.info(`Freed storage for '${req.body.filePath}`);
-                        return res.sendStatus(200);
-                    }
-                });
-            } else {
-                loggger.error(`No such user - '${req.body.token.email}`);
-                return res.status(404).json({
-                    error: "Invalid username/password. Please re-login",
-                });
-            }
-        });
+        let usr = await User.findOne({ email: req.body.token.email }).exec();
+        if (usr) {
+            const fsize = utility.getFolderSize(req.body.filePath);
+            fs.rmSync(req.body.filePath, { recursive: true });
+            logger.info(`Deleted file/folder - '${req.body.filePath}'`);
+            usr.storage -= fsize;
+            await usr.save((saveError) => {
+                if (saveError) {
+                    logger.error(`Error updating user storage on deleting - '${req.body.filePath}. Err - ${saveError}`);
+                    return res.status(500).json({
+                        error: "Internal server error. Contact System Administrator",
+                    });
+                } else {
+                    logger.info(`Freed storage for '${req.body.filePath}`);
+                    return res.sendStatus(200);
+                }
+            });
+        } else {
+            loggger.error(`No such user - '${req.body.token.email}`);
+            return res.status(404).json({
+                error: "Invalid username/password. Please re-login",
+            });
+        }
     } catch (err) {
         logger.error(`Error deleting file/folder - '${req.body.filePath}' - Err - ${err}`);
         return res.status(500).json({
