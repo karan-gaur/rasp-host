@@ -47,7 +47,7 @@ mongoose.connect(
 
 // Initializing middlewares
 app.use(cors());
-app.use(fileUpload({ useTempFiles: true, tempFileDir: constants.TEMP_FOLDER_PATH }));
+app.use(fileUpload({ useTempFiles: true, tempFileDir: constants.DATA_DUMP }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 

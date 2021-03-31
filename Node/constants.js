@@ -5,9 +5,7 @@ const path = require("path");
 require("winston-daily-rotate-file");
 
 module.exports = {
-    ZIP: ".zip",
-    ZIP_PATH: path.join(__dirname, "public", "zip"),
-    TEMP_FOLDER_PATH: path.join(__dirname, "public", "temp"),
+    DATA_DUMP: path.join(__dirname, "public", "data"),
     LOGGER: winston.createLogger({
         transports: [
             new winston.transports.DailyRotateFile({
