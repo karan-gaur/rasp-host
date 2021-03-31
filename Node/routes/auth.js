@@ -20,13 +20,11 @@ router.post("/login", async (req, res) => {
         logger.error(`Missing body params Username/Password`);
         return res.status(400).json({ error: "Invalid/Missing required values - username/password [String]." });
     }
-
-    const usr = await User.findOne({ email: req.body.email }).exec();
-    if (usr) {
-        // User Exists
-        bcrypt
-            .compare(req.body.password, usr.hash)
-            .then((resolve) => {
+    try {
+        const usr = await User.findOne({ email: req.body.email }).exec();
+        if (usr) {
+            // User Exists
+            bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
                 if (!resolve) {
                     // Invalid Password
                     logger.info(`Invalid Password for - '${req.body.email}'`);
@@ -63,15 +61,15 @@ router.post("/login", async (req, res) => {
                     }
                     return res.json({ token: token, path: [], name: usr.name, admin: usr.admin });
                 }
-            })
-            .catch((err) => {
-                logger.error(`Error logging in user - '${req.body.token.email}'. Error - ${err}`);
-                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
             });
-    } else {
-        // No such user
-        logger.info(`No user with username - '${req.body.email}'`);
-        return res.status(404).json({ error: "Invalid username/password. Please re-login" });
+        } else {
+            // No such user
+            logger.info(`No user with username - '${req.body.email}'`);
+            return res.status(404).json({ error: "Invalid username/password. Please re-login" });
+        }
+    } catch (err) {
+        logger.error(`Error logging in user - '${req.body.email}'. Error - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
 });
 
