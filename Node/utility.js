@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const archiver = require("archiver");
 const config = require("./config");
 const constants = require("./constants");
 const logger = constants.LOGGER;
@@ -85,7 +86,7 @@ function checkAuthorization(req, res, next) {
  * @param {ResBody} res User API response object
  * @param {*} next Callback
  */
-const verifyPassword = async (req, res, next) => {
+async function verifyPassword(req, res, next) {
     if (typeof req.body.password !== "string") {
         logger.error(`Missing parameter 'password' for verifyPassword with token email - '${req.body.token.email}'`);
         return res
@@ -118,7 +119,7 @@ const verifyPassword = async (req, res, next) => {
         logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
         return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
-};
+}
 
 /**
  * Evaluate folder size in Bytes
@@ -156,6 +157,44 @@ function validateEmail(email) {
 }
 
 /**
+ * Compress folders and save to local directory
+ * @param {string} srcFolder
+ * @param {string} zipFilePath
+ * @returns
+ */
+function zipFolder(srcFolder, zipFilePath) {
+    return new Promise((resolve, reject) => {
+        const targetBasePath = path.dirname(zipFilePath);
+
+        if (targetBasePath === srcFolder) {
+            return reject(Error("Source and target folder must be different."));
+        }
+
+        fs.accessSync(srcFolder, fs.constants.F_OK);
+        // try {
+        fs.accessSync(path.dirname(zipFilePath), fs.constants.F_OK);
+        // } catch (err) {
+        //     console.log("yahi mc hai");
+        // }
+        const output = fs.createWriteStream(zipFilePath);
+        const zipArchive = archiver("zip");
+
+        output.on("close", function () {
+            resolve();
+        });
+
+        // Error while compressing the folder and writing to directory
+        zipArchive.on("error", function (err) {
+            return reject(err);
+        });
+
+        zipArchive.pipe(output);
+        zipArchive.directory(srcFolder, false);
+        zipArchive.finalize();
+    });
+}
+
+/**
  * Get extenstion of the given file.
  * @param {string} fileName Name of the file.
  * @returns {string}
@@ -172,5 +211,6 @@ module.exports = {
     getFolderSize: getFolderSize,
     validateEmail: validateEmail,
     checkFilePath: checkFilePath,
+    zipFolder: zipFolder,
     getFileExtension: getFileExtension,
 };
