@@ -51,6 +51,15 @@ app.use(fileUpload({ useTempFiles: true, tempFileDir: constants.DATA_DUMP }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Catching invalid JSON Syntax
+app.use((err, req, res, next) => {
+    if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+        logger.error(`Invalid JSON Syntax Error. Error - ${err}`);
+        return res.status(400).send({ status: 404, message: err.message }); // Bad request
+    }
+    next();
+});
+
 // Health Check route
 app.get("/health-check", (req, res) => {
     res.status(200).json({ success: "Connection established" });
