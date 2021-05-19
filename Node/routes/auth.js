@@ -44,9 +44,8 @@ router.post("/login", async (req, res) => {
                         return res.status(500).json({ error: "Delete file with similar name as user's email" });
                     } else if (!fs.existsSync(usr.path.join(path.sep))) {
                         // User directory does not exists
-                        logger.warn(`User directory has been moved or deleted - '${usr.path.join(path.sep)}'`);
                         fs.mkdirSync(usr.path.join(path.sep));
-                        logger.info(`Recreated user directory '${usr.path.join(path.sep)}`);
+                        logger.warn(`User directory missing. Recreated directory - '${usr.path.join(path.sep)}'`);
                     }
 
                     const token = utility.generateAccessToken(usr);
@@ -138,14 +137,11 @@ router.post(
             ) {
                 // User directory already exists. Evaluating folder size
                 try {
-                    logger.info(`User directory already exists - '${new_user.path.join(path.sep)}`);
                     new_user.storage = utility.getFolderSize(new_user.path.join(path.sep));
-                    logger.info(`Evaluated folder size - '${new_user.storage}`);
+                    logger.info(`User directory exists. User '${new_user.email}'s folder size - '${new_user.storage}`);
                 } catch (err) {
                     logger.error(`Error evaluating folder size - '${new_user.path.join(path.sep)}'. Error - ${err}`);
-                    return res.status(500).json({
-                        error: "Internal server error. Contact System Administrator",
-                    });
+                    return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
                 }
             } else if (
                 fs.existsSync(new_user.path.join(path.sep)) &&
@@ -194,20 +190,25 @@ router.post("/getAccessToken", async (req, res) => {
 
         const usr = await User.findOne({ email: refreshToken.email }).exec();
         if (usr) {
-            let accessToken = utility.generateAccessToken(usr);
-            refreshToken = utility.generateRefreshToken(usr, device_id);
-
-            usr.devices.set(device_id, refreshToken);
+            // Verifying refresh token
+            if (req.body.refreshToken !== usr.devices.get(device_id)) {
+                // Token might be compromised. Removing device from user_devices
+                logger.warn(`Refresh Token might be compromised for - ${usr.email}`);
+                usr.devices.delete(device_id);
+                res.status(403).json({ error: "Refresh token has expired" });
+            } else {
+                // Updating refresh token for device
+                let accessToken = utility.generateAccessToken(usr);
+                refreshToken = utility.generateRefreshToken(usr, device_id);
+                usr.devices.set(device_id, refreshToken);
+                res.status(200).json({ token: accessToken, refreshToken: refreshToken });
+                logger.info(`New refresh token generated for - ${usr.email}`);
+            }
             usr.save(function (saveError) {
                 if (saveError) {
                     logger.error(`Error updating refreshtoken for '${usr.email}. Err - ${saveError}`);
                     return res.sendStatus(500);
                 }
-                logger.info(`New refresh token generated for - ${usr.email}`);
-            });
-            return res.json({
-                accessToken: accessToken,
-                refreshToken: refreshToken,
             });
         } else {
             // No such user
@@ -215,7 +216,11 @@ router.post("/getAccessToken", async (req, res) => {
             return res.status(404).json({ error: "Invalid username/password. Please re-login" });
         }
     } catch (err) {
-        logger.error(`Error generating accessToken for user - '${refreshToken.email}'. Error - ${err}`);
+        if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {
+            logger.error(`Error validating JWT from request. Err - ${err}`);
+            return res.status(401).json({ error: "JWT Token unauthorised - reissue required." });
+        }
+        logger.error(`Error generating accessToken - Error - ${err}`);
         return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
 });
@@ -258,7 +263,7 @@ router.post(
                 return res.status(400).json({ error: "Invalid value for 'email' - " + req.body.email });
             } else if (typeof req.body.delData !== "boolean") {
                 // Invalid arguement parsed - req.body.delData
-                logger.error(
+                logger.info(
                     `Invalid body attribute 'delData' for '/admin/delete' - '${req.body.delData}'. Must be Boolean.`
                 );
                 return res

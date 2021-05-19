@@ -24,7 +24,7 @@ function checkAuthentication(req, res, next) {
         try {
             req.body.token = jwt.verify(token, config.ACCESS_TOKEN_SECRET_KEY);
         } catch (err) {
-            logger.error(`Error verifying JWT from request. Err - ${err}`);
+            logger.error(`Error validating JWT from request. Err - ${err}`);
             return res.status(401).json({ error: "JWT Token unauthorised - reissue required." });
         }
         if (typeof req.body.path !== "undefined") {
