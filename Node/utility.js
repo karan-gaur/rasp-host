@@ -22,7 +22,7 @@ function checkAuthentication(req, res, next) {
         // Validating AUTH token
         const token = req.headers["authorization"].split(" ")[1];
         try {
-            req.body.token = jwt.verify(token, config.SECRET_KEY);
+            req.body.token = jwt.verify(token, config.ACCESS_TOKEN_SECRET_KEY);
         } catch (err) {
             logger.error(`Error verifying JWT from request. Err - ${err}`);
             return res.status(401).json({ error: "JWT Token unauthorised - reissue required." });
@@ -53,7 +53,7 @@ function checkAuthentication(req, res, next) {
 function checkFilePath(req, res, next) {
     if (typeof req.body.filePath !== "string" || !fs.existsSync(req.body.filePath)) {
         // Directory does not exists
-        logger.error(`No such file/folder exists - ${req.body.filePath}`);
+        logger.warn(`No such file/folder exists - ${req.body.filePath}`);
         return res.status(400).json({ error: "No such file/folder exists - '" + req.body.path.join(path.sep) + "'" });
     }
     next();
@@ -68,14 +68,10 @@ function checkFilePath(req, res, next) {
 function checkAuthorization(req, res, next) {
     if (req.body.token.admin) {
         // Check if user has privilege admin access
-        logger.info(
-            `User authorized 'admin' access - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
-        );
+        logger.info(`Authorized access - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`);
         next();
     } else {
-        logger.error(
-            `Unauthorized 'admin' access failed - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`
-        );
+        logger.warn(`Unauthorized access - {'user':'${req.body.token.email}', 'admin':'${req.body.token.admin}}`);
         return res.status(404).json({ error: "URL does not exists" });
     }
 }
@@ -88,7 +84,7 @@ function checkAuthorization(req, res, next) {
  */
 async function verifyPassword(req, res, next) {
     if (typeof req.body.password !== "string") {
-        logger.error(`Missing parameter 'password' for verifyPassword with token email - '${req.body.token.email}'`);
+        logger.info(`Missing parameter 'password' in verifyPassword for email - '${req.body.token.email}'`);
         return res
             .status(400)
             .json({ error: "Invalid/Missing paramter 'password' - '" + req.body.password + "'. Must be string" });
@@ -102,7 +98,7 @@ async function verifyPassword(req, res, next) {
             await bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
                 if (!resolve) {
                     // Invalid Password
-                    logger.error(`Invalid Password for - '${req.body.email}'`);
+                    logger.warn(`Invalid Password for - '${req.body.email}'`);
                     return res.status(401).json({ error: "Invalid username/password" });
                 } else {
                     // Login Successful
@@ -152,7 +148,8 @@ function getFolderSize(dirPath) {
  */
 function validateEmail(email) {
     if (email.length < 6 || email.length > 256) return false;
-    const re = /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
+    const re =
+        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
     return re.test(String(email).toLowerCase());
 }
 
@@ -204,6 +201,41 @@ function getFileExtension(fileName) {
     return ext[ext.length - 1];
 }
 
+/**
+ * Generate Access token for authentication user operations
+ * @param {User} usr
+ * @returns String
+ */
+function generateAccessToken(usr) {
+    return jwt.sign(
+        {
+            name: usr.name,
+            email: usr.email,
+            path: usr.path,
+            admin: usr.admin,
+        },
+        config.ACCESS_TOKEN_SECRET_KEY,
+        { expiresIn: config.ACCESS_TOKEN_EXPIRY } // Token expiry
+    );
+}
+
+/**
+ * Generate rotating refresh token for providing access tokens
+ * @param {User} usr
+ * @param {String} device_id
+ * @returns String - JWT Token
+ */
+function generateRefreshToken(usr, device_id) {
+    return jwt.sign(
+        {
+            email: usr.email,
+            device_id: device_id,
+        },
+        config.REFRESH_TOKEN_SECRET_KEY,
+        { expiresIn: config.REFRESH_TOKEN_EXPIRY } // Token expiry
+    );
+}
+
 module.exports = {
     checkAuthentication: checkAuthentication,
     checkAuthorization: checkAuthorization,
@@ -212,5 +244,7 @@ module.exports = {
     validateEmail: validateEmail,
     checkFilePath: checkFilePath,
     zipFolder: zipFolder,
+    generateAccessToken: generateAccessToken,
+    generateRefreshToken: generateRefreshToken,
     getFileExtension: getFileExtension,
 };
