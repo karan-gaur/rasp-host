@@ -34,7 +34,7 @@ global.User = require("./models/user");
 
 // DB Connection
 mongoose.connect(
-    config.dbConnectString,
+    config.DB_CONNECT_STRING,
     { useUnifiedTopology: true, useCreateIndex: true, useNewUrlParser: true },
     (err) => {
         if (err) {
