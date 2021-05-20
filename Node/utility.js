@@ -162,17 +162,13 @@ function validateEmail(email) {
 function zipFolder(srcFolder, zipFilePath) {
     return new Promise((resolve, reject) => {
         const targetBasePath = path.dirname(zipFilePath);
-
         if (targetBasePath === srcFolder) {
             return reject(Error("Source and target folder must be different."));
         }
 
         fs.accessSync(srcFolder, fs.constants.F_OK);
-        // try {
         fs.accessSync(path.dirname(zipFilePath), fs.constants.F_OK);
-        // } catch (err) {
-        //     console.log("yahi mc hai");
-        // }
+
         const output = fs.createWriteStream(zipFilePath);
         const zipArchive = archiver("zip");
 
