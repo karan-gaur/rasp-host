@@ -1,4 +1,5 @@
 const fs = require("fs");
+const uuid = require("uuid");
 const path = require("path");
 const bcrypt = require("bcrypt");
 const express = require("express");
@@ -17,7 +18,7 @@ const transport = nodemailer.createTransport(config.mailer);
 router.post("/login", async (req, res) => {
     // Validating Params
     if (typeof req.body.email !== "string" || typeof req.body.password !== "string") {
-        logger.error(`Missing body params Username/Password`);
+        logger.info(`Missing body params Username/Password`);
         return res.status(400).json({ error: "Invalid/Missing required values - username/password [String]." });
     }
     try {
@@ -32,22 +33,10 @@ router.post("/login", async (req, res) => {
                 } else {
                     // Login Successful
                     logger.info(`Login Successful for user - '${req.body.email}'`);
-                    const token = jwt.sign(
-                        {
-                            name: usr.name,
-                            email: usr.email,
-                            path: usr.path,
-                            admin: usr.admin,
-                        },
-                        config.SECRET_KEY,
-                        {
-                            expiresIn: config.TOKEN_EXPIRY, // Token expiry
-                        }
-                    );
 
                     if (fs.existsSync(usr.path.join(path.sep)) && fs.lstatSync(usr.path.join(path.sep)).isFile()) {
                         // User directory has been deleted & cannot be created since file with similar name exists.
-                        logger.error(
+                        logger.warn(
                             `User directory can't be recreated. File with similar name exists  - '${usr.path.join(
                                 path.sep
                             )}`
@@ -55,11 +44,30 @@ router.post("/login", async (req, res) => {
                         return res.status(500).json({ error: "Delete file with similar name as user's email" });
                     } else if (!fs.existsSync(usr.path.join(path.sep))) {
                         // User directory does not exists
-                        logger.warn(`User directory has been moved or deleted - '${usr.path.join(path.sep)}'`);
                         fs.mkdirSync(usr.path.join(path.sep));
-                        logger.info(`Recreated user directory '${usr.path.join(path.sep)}`);
+                        logger.warn(`User directory missing. Recreated directory - '${usr.path.join(path.sep)}'`);
                     }
-                    return res.json({ token: token, path: [], name: usr.name, admin: usr.admin });
+
+                    const token = utility.generateAccessToken(usr);
+                    let device_id = req.body.device_id ? req.body.device_id : uuid.v4();
+                    let refreshToken = utility.generateRefreshToken(usr, device_id);
+                    usr.devices.set(device_id, refreshToken);
+                    usr.save((saveError) => {
+                        if (saveError) {
+                            logger.error(`Error adding new device for '${usr.email}. Err - ${saveError}`);
+                            return res.sendStatus(500);
+                        }
+                        logger.info(`New device added for user - ${usr.email}`);
+                    });
+
+                    return res.json({
+                        token: token,
+                        refreshToken: refreshToken,
+                        device_id: device_id,
+                        path: [],
+                        name: usr.name,
+                        admin: usr.admin,
+                    });
                 }
             });
         } else {
@@ -117,6 +125,7 @@ router.post(
         new_user.admin = req.body.admin ? true : false;
         new_user.path = path.dirname(__dirname).split(path.sep);
         new_user.path.push("users", req.body.email);
+        new_user.devices = {};
         new_user.storageLimit = req.body.storageLimit
             ? req.body.storageLimit * 1024 * 1024 * 1024
             : config.USER_STORAGE_LIMIT;
@@ -128,14 +137,11 @@ router.post(
             ) {
                 // User directory already exists. Evaluating folder size
                 try {
-                    logger.info(`User directory already exists - '${new_user.path.join(path.sep)}`);
                     new_user.storage = utility.getFolderSize(new_user.path.join(path.sep));
-                    logger.info(`Evaluated folder size - '${new_user.storage}`);
+                    logger.info(`User directory exists. User '${new_user.email}'s folder size - '${new_user.storage}`);
                 } catch (err) {
                     logger.error(`Error evaluating folder size - '${new_user.path.join(path.sep)}'. Error - ${err}`);
-                    return res.status(500).json({
-                        error: "Internal server error. Contact System Administrator",
-                    });
+                    return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
                 }
             } else if (
                 fs.existsSync(new_user.path.join(path.sep)) &&
@@ -150,7 +156,7 @@ router.post(
             }
 
             // Encryting password and saving in the Database
-            new_user.hash = await bcrypt.hash(req.body.user_pass, 10);
+            new_user.hash = await bcrypt.hash(req.body.user_pass, config.SALT);
             new_user.save((saveError) => {
                 if (saveError && saveError.code === 11000) {
                     logger.info(`Duplicate key found - '${new_user.email}`);
@@ -171,6 +177,53 @@ router.post(
         }
     }
 );
+
+// Refresh Token API
+router.post("/getAccessToken", async (req, res) => {
+    if (typeof req.body.refreshToken === "undefined") {
+        logger.info(`Missing required field 'refreshToken' in body`);
+        return res.status(400).json({ error: "Missing field 'refreshToken' in body" });
+    }
+    try {
+        let refreshToken = jwt.verify(req.body.refreshToken, config.REFRESH_TOKEN_SECRET_KEY);
+        let device_id = refreshToken.device_id;
+
+        const usr = await User.findOne({ email: refreshToken.email }).exec();
+        if (usr) {
+            // Verifying refresh token
+            if (req.body.refreshToken !== usr.devices.get(device_id)) {
+                // Token might be compromised. Removing device from user_devices
+                logger.warn(`Refresh Token might be compromised for - ${usr.email}`);
+                usr.devices.delete(device_id);
+                res.status(403).json({ error: "Refresh token has expired" });
+            } else {
+                // Updating refresh token for device
+                let accessToken = utility.generateAccessToken(usr);
+                refreshToken = utility.generateRefreshToken(usr, device_id);
+                usr.devices.set(device_id, refreshToken);
+                res.status(200).json({ token: accessToken, refreshToken: refreshToken });
+                logger.info(`New refresh token generated for - ${usr.email}`);
+            }
+            usr.save(function (saveError) {
+                if (saveError) {
+                    logger.error(`Error updating refreshtoken for '${usr.email}. Err - ${saveError}`);
+                    return res.sendStatus(500);
+                }
+            });
+        } else {
+            // No such user
+            logger.info(`No user with username - '${refreshToken.email}'`);
+            return res.status(404).json({ error: "Invalid username/password. Please re-login" });
+        }
+    } catch (err) {
+        if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {
+            logger.error(`Error validating JWT from request. Err - ${err}`);
+            return res.status(401).json({ error: "JWT Token unauthorised - reissue required." });
+        }
+        logger.error(`Error generating accessToken - Error - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+    }
+});
 
 // Delete self User
 router.post("/self/delete", [utility.checkAuthentication, utility.verifyPassword], async (req, res) => {
@@ -210,7 +263,7 @@ router.post(
                 return res.status(400).json({ error: "Invalid value for 'email' - " + req.body.email });
             } else if (typeof req.body.delData !== "boolean") {
                 // Invalid arguement parsed - req.body.delData
-                logger.error(
+                logger.info(
                     `Invalid body attribute 'delData' for '/admin/delete' - '${req.body.delData}'. Must be Boolean.`
                 );
                 return res

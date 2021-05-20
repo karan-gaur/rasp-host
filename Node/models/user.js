@@ -33,6 +33,10 @@ var userSchema = new mongoose.Schema({
         type: Number,
         default: config.USER_STORAGE_LIMIT,
     },
+    devices: {
+        type: Map,
+        of: String,
+    },
 });
 
 module.exports = mongoose.model("User", userSchema);
