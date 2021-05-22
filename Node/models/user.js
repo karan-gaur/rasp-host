@@ -35,7 +35,17 @@ var userSchema = new mongoose.Schema({
     },
     devices: {
         type: Map,
-        of: String,
+        of: new mongoose.Schema({
+            refreshToken: {
+                type: String,
+                required: true,
+            },
+            lastUsed: {
+                type: String,
+                default: new Date().toISOString(),
+            },
+        }),
+        default: {},
     },
 });
 

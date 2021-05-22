@@ -51,13 +51,19 @@ router.post("/login", async (req, res) => {
                     const token = utility.generateAccessToken(usr);
                     let device_id = req.body.device_id ? req.body.device_id : uuid.v4();
                     let refreshToken = utility.generateRefreshToken(usr, device_id);
-                    usr.devices.set(device_id, refreshToken);
+
+                    // Managing user device limit
+                    if (usr.devices.size >= config.USER_DEVICE_LIMIT && !usr.devices.has(device_id)) {
+                        usr.devices.delete(utility.get_LRU_Device(usr.devices));
+                    }
+
+                    usr.devices.set(device_id, { refreshToken: refreshToken });
                     usr.save((saveError) => {
                         if (saveError) {
                             logger.error(`Error adding new device for '${usr.email}. Err - ${saveError}`);
                             return res.sendStatus(500);
                         }
-                        logger.info(`New device added for user - ${usr.email}`);
+                        logger.info(`Updated user device list for - ${usr.email}`);
                     });
 
                     return res.json({
@@ -125,7 +131,6 @@ router.post(
         new_user.admin = req.body.admin ? true : false;
         new_user.path = path.dirname(__dirname).split(path.sep);
         new_user.path.push("users", req.body.email);
-        new_user.devices = {};
         new_user.storageLimit = req.body.storageLimit
             ? req.body.storageLimit * 1024 * 1024 * 1024
             : config.USER_STORAGE_LIMIT;
@@ -191,7 +196,7 @@ router.post("/getAccessToken", async (req, res) => {
         const usr = await User.findOne({ email: refreshToken.email }).exec();
         if (usr) {
             // Verifying refresh token
-            if (req.body.refreshToken !== usr.devices.get(device_id)) {
+            if (req.body.refreshToken !== usr.devices.get(device_id).refreshToken) {
                 // Token might be compromised. Removing device from user_devices
                 logger.warn(`Refresh Token might be compromised for - ${usr.email}`);
                 usr.devices.delete(device_id);
@@ -200,7 +205,7 @@ router.post("/getAccessToken", async (req, res) => {
                 // Updating refresh token for device
                 let accessToken = utility.generateAccessToken(usr);
                 refreshToken = utility.generateRefreshToken(usr, device_id);
-                usr.devices.set(device_id, refreshToken);
+                usr.devices.set(device_id, { refreshToken: refreshToken });
                 res.status(200).json({ token: accessToken, refreshToken: refreshToken });
                 logger.info(`New refresh token generated for - ${usr.email}`);
             }
@@ -213,7 +218,7 @@ router.post("/getAccessToken", async (req, res) => {
         } else {
             // No such user
             logger.info(`No user with username - '${refreshToken.email}'`);
-            return res.status(404).json({ error: "Invalid username/password. Please re-login" });
+            return res.status(403).json({ error: "Invalid token. Please re-login" });
         }
     } catch (err) {
         if (err instanceof jwt.TokenExpiredError || err instanceof jwt.JsonWebTokenError) {

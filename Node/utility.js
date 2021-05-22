@@ -232,6 +232,19 @@ function generateRefreshToken(usr, device_id) {
     );
 }
 
+function get_LRU_Device(devices) {
+    let oldest_value = undefined;
+    let oldest_value_index = undefined;
+    devices.forEach((value, key) => {
+        // Finding Least Recently Used Value
+        if (typeof oldest_value === "undefined" || oldest_value > value.lastUsed) {
+            oldest_value = value.lastUsed;
+            oldest_value_index = key;
+        }
+    });
+    return oldest_value_index;
+}
+
 module.exports = {
     checkAuthentication: checkAuthentication,
     checkAuthorization: checkAuthorization,
@@ -242,5 +255,6 @@ module.exports = {
     zipFolder: zipFolder,
     generateAccessToken: generateAccessToken,
     generateRefreshToken: generateRefreshToken,
+    get_LRU_Device: get_LRU_Device,
     getFileExtension: getFileExtension,
 };
