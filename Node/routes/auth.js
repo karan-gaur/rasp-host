@@ -128,7 +128,6 @@ router.post(
         var new_user = new User();
         new_user.name = req.body.name;
         new_user.email = req.body.email;
-        new_user.admin = req.body.admin ? true : false;
         new_user.path = path.dirname(__dirname).split(path.sep);
         new_user.path.push("users", req.body.email);
         new_user.storageLimit = req.body.storageLimit
@@ -301,36 +300,41 @@ router.post(
 );
 
 // Create admin user.
-router.post("/create_dummy", (req, res) => {
-    // Creating dummy user for testing
-    var new_user = new User();
-    new_user.name = req.body.name;
-    new_user.email = req.body.email;
-    new_user.admin = req.body.admin;
-    new_user.path = path.dirname(__dirname).split(path.sep);
-    new_user.path.push("users", req.body.email);
-    new_user.storageLimit = req.body.storageLimit
-        ? req.body.storageLimit * 1024 * 1024 * 1024
-        : config.USER_STORAGE_LIMIT;
+router.get("/reset/admin", async (req, res) => {
+    const usr = await User.findOne({ email: config.ADMIN_EMAIL }).exec();
 
-    bcrypt.hash(req.body.password, 10).then((hashPwd) => {
-        if (err) {
-            logger.error(`Error encrypting password for '${new_user.email}. Err - '${err}'`);
-            return res.sendStatus(500);
-        } else {
+    var new_user = new User();
+    new_user.name = config.ADMIN_NAME;
+    new_user.email = config.ADMIN_EMAIL;
+    new_user.admin = true;
+    new_user.path = path.dirname(__dirname).split(path.sep);
+    new_user.path.push("users", config.ADMIN_EMAIL);
+    new_user.storage = usr ? usr.storage : 0;
+    new_user.storageLimit = usr ? usr.storageLimit : config.USER_STORAGE_LIMIT;
+
+    // Deleting previous admin user
+    await User.deleteOne({ email: config.ADMIN_EMAIL });
+
+    bcrypt
+        .hash(config.ADMIN_PASS, config.SALT)
+        .then((hashPwd) => {
             new_user.hash = hashPwd;
             new_user.save(function (saveError) {
                 if (saveError) {
-                    logger.info(`Error encrypting password for '${new_user.email}. Err - ${saveError}`);
-                    res.sendStatus(500);
-                } else {
+                    logger.error(`Error saving encrypting password for '${new_user.email}. Err - ${saveError}`);
+                    return res.sendStatus(500);
+                } else if (!fs.existsSync(new_user.path.join(path.sep))) {
+                    // Create new directory if does not exists
                     fs.mkdirSync(new_user.path.join(path.sep));
-                    res.sendStatus(200);
-                    console.log("user added");
                 }
+                logger.info(`Successfully resetted admin user`);
+                return res.sendStatus(200);
             });
-        }
-    });
+        })
+        .catch((err) => {
+            logger.error(`Error encrypting password for '${new_user.email}. Err - '${err}'`);
+            return res.sendStatus(500);
+        });
 });
 
 module.exports = router;
