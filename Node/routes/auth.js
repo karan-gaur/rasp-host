@@ -87,6 +87,25 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// Logout user from all devices
+router.post("/logout/all", [utility.checkAuthentication, utility.verifyPassword], async (req, res) => {
+    try {
+        const usr = await User.findOne({ email: req.body.token.email }).exec();
+        usr.devices = {};
+        usr.save((saveError) => {
+            if (saveError) {
+                logger.error(`Error deleting user devices for - ${req.body.token.email}`);
+                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            }
+            logger.info(`Deleted all devices for user - ${req.body.token.email}`);
+            return res.sendStatus(200);
+        });
+    } catch (err) {
+        logger.error(`Error verifying user password - '${req.body.token.email}' - Err - ${err}`);
+        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+    }
+});
+
 // Register new Account.
 router.post(
     "/register",
@@ -117,7 +136,7 @@ router.post(
             return res
                 .status(400)
                 .json({ error: "Invalid value for 'admin' - '" + req.body.admin + "'. Must be Boolean [true/false]." });
-        } else if (typeof req.body.storageLimit !== "number" || req.body.storageLimit <= 0) {
+        } else if (req.body.storageLimit && (typeof req.body.storageLimit !== "number" || req.body.storageLimit <= 0)) {
             logger.error(`Invalid '/register' body param - {'storageLimit':'${req.body.storageLimit}'}`);
             return res.status(400).json({
                 error: "Invalid value for 'storageLimit' - '" + req.body.storageLimit + "'. Must be +ve Number.",
