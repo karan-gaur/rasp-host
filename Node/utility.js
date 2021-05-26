@@ -98,7 +98,7 @@ async function verifyPassword(req, res, next) {
             await bcrypt.compare(req.body.password, usr.hash).then((resolve) => {
                 if (!resolve) {
                     // Invalid Password
-                    logger.warn(`Invalid Password for - '${req.body.email}'`);
+                    logger.warn(`Invalid Password for - '${req.body.token.email}'`);
                     return res.status(401).json({ error: "Invalid username/password" });
                 } else {
                     // Login Successful

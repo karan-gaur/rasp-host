@@ -28,7 +28,7 @@ module.exports = {
     USER_DEVICE_LIMIT: 10,
 
     // Admin Configurations
-    ADMIN_NAME: "Gochi",
-    ADMIN_EMAIL: "gochi@g.com",
+    ADMIN_NAME: "Admin",
+    ADMIN_EMAIL: "admin@g.com",
     ADMIN_PASS: "1",
 };
