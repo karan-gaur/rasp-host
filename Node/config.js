@@ -13,9 +13,12 @@ module.exports = {
 
     // Server configurations
     SALT: 10,
-    REDIS_PORT: 6379,
     sessionKey: "CheckCookieCheck",
     DB_CONNECT_STRING: "mongodb://127.0.0.1:27017/raspHost",
+
+    // Cache Configurations
+    ENABLE_CACHE: true,
+    REDIS_PORT: 6379,
 
     // Token configurations
     ACCESS_TOKEN_SECRET_KEY: "Check_JWT_authentication",
@@ -26,6 +29,10 @@ module.exports = {
     // User Configuration properties
     USER_STORAGE_LIMIT: 1024 * 1024 * 1024 * 10, // 10 GB - Value in bytes
     USER_DEVICE_LIMIT: 10,
+
+    // File CHECKS
+    SUPPORTED_EXTENSIONS: { mp4: "video/mp4" },
+    MAX_FILE_SIZE_FOR_EDIT: 1024 * 1024 * 10, // 10 MB - Value in bytes
 
     // Admin Configurations
     ADMIN_NAME: "Admin",
