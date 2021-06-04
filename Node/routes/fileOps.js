@@ -1,49 +1,69 @@
 const fs = require("fs");
+const util = require("util");
 const path = require("path");
-const uuid = require("uuid/v1");
+const uuid = require("uuid/v4");
 const express = require("express");
 
+const config = require("../config");
 const utility = require("../utility");
 const constants = require("../constants");
 
 const router = express.Router();
 const logger = constants.LOGGER;
+const stat = util.promisify(fs.stat);
+const readdir = util.promisify(fs.readdir);
+const readFile = util.promisify(fs.readFile);
+const writeFile = util.promisify(fs.writeFile);
 
 // Root Api.
-router.post("/", [utility.checkAuthentication, utility.checkFilePath], (req, res) => {
+router.post("/", [utility.checkAuthentication, utility.checkFilePath], async (req, res) => {
     try {
-        if (fs.lstatSync(req.body.filePath).isDirectory()) {
+        let docStats = await stat(req.body.filePath);
+        if (docStats.isDirectory()) {
             logger.info(`Reading directory details for '${req.body.token.email}' - ${req.body.filePath}`);
-            dirContents = fs.readdirSync(req.body.filePath);
+            dirContents = await readdir(req.body.filePath);
             files = [];
             folders = [];
 
             // Segregating files and folders in directory
-            dirContents.forEach((file) => {
-                stats = fs.lstatSync(path.join(req.body.filePath, file));
+            for (let i = 0; i < dirContents.length; i++) {
+                const stats = await stat(path.join(req.body.filePath, dirContents[i]));
                 if (stats.isDirectory()) {
                     folders.push({
-                        name: file,
-                        size: utility.getFolderSize(path.join(req.body.filePath, file)),
+                        name: dirContents[i],
                         mt: stats.mtime,
                     });
                 } else {
                     files.push({
-                        name: file,
+                        name: dirContents[i],
                         size: stats.size,
                         mt: stats.mtime,
                     });
                 }
-            });
+            }
+
             return res.status(200).json({
                 files: files,
                 folders: folders,
                 selectedFile: req.body.path,
             });
-        } else {
-            // Path points to file
-            logger.info(`Streaming video - '${req.body.filePath}`);
-            const fileSize = fs.statSync(req.body.filePath).size;
+        }
+
+        let extension = utility.getFileExtension(req.body.filePath);
+
+        if (extension === "txt" && utility.getFolderSize(req.body.filePath) <= config.MAX_FILE_SIZE_FOR_EDIT) {
+            if (req.body.write) {
+                await writeFile(req.body.filePath, req.body.fileData);
+                logger.info(`Updated contents of ${req.body.filePath} by ${req.body.token.email}`);
+                return res.status(200);
+            } else {
+                res.status(200).json({ fileData: await readFile(req.body.filePath, "utf8") });
+                logger.info(`Read file ${req.body.filePath} by ${req.body.token.email}`);
+            }
+        } else if (extension in config.STREAM_SUPPORTED_EXTENSIONS) {
+            // Path points to streamable file
+            logger.info(`Streaming multimedia file - '${req.body.filePath}`);
+            const fileSize = docStats.size;
             const range = req.headers.range;
 
             if (range) {
@@ -56,18 +76,27 @@ router.post("/", [utility.checkAuthentication, utility.checkFilePath], (req, res
                     "Content-Range": `bytes ${start}-${end}/${fileSize}`,
                     "Accept-Ranges": `bytes`,
                     "Content-Length": end - start + 1,
-                    "Content-Type": `video/mp4`,
+                    "Content-Type": `${config.STREAM_SUPPORTED_EXTENSIONS[extension]}`,
                 };
                 res.writeHead(206, head);
                 file.pipe(res);
             } else {
                 const head = {
                     "Content-Length": fileSize,
-                    "Content-Type": "video/mp4",
+                    "Content-Type": `${config.STREAM_SUPPORTED_EXTENSIONS[extension]}`,
                 };
                 res.writeHead(200, head);
                 fs.createReadStream(req.body.filePath).pipe(res);
             }
+        } else {
+            // Downloading file
+            res.status(200).download(req.body.filePath, function (downloadError) {
+                if (downloadError) {
+                    logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
+                    return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+                }
+                logger.info(`Downloaded file ${req.body.filePath}`);
+            });
         }
     } catch (err) {
         logger.error(`Error fetching file details - '${req.body.filePath}'. Err - ${err}`);
