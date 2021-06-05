@@ -31,7 +31,13 @@ module.exports = {
     USER_DEVICE_LIMIT: 10,
 
     // File CHECKS
-    SUPPORTED_EXTENSIONS: { mp4: "video/mp4" },
+    STREAM_SUPPORTED_EXTENSIONS: {
+        mp4: "video/mp4",
+        jpeg: "image/jpeg",
+        png: "image/png",
+        mp3: "audio/mpeg",
+        pdf: "application/pdf",
+    },
     MAX_FILE_SIZE_FOR_EDIT: 1024 * 1024 * 10, // 10 MB - Value in bytes
 
     // Admin Configurations
