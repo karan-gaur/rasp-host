@@ -11,6 +11,9 @@ const constants = require("../constants");
 const router = express.Router();
 const logger = constants.LOGGER;
 const stat = util.promisify(fs.stat);
+const mkdir = util.promisify(fs.mkdir);
+const unlink = util.promisify(fs.unlink);
+const exists = util.promisify(fs.exists);
 const readdir = util.promisify(fs.readdir);
 const readFile = util.promisify(fs.readFile);
 const writeFile = util.promisify(fs.writeFile);
@@ -27,17 +30,20 @@ router.post("/", [utility.checkAuthentication, utility.checkFilePath], async (re
 
             // Segregating files and folders in directory
             for (let i = 0; i < dirContents.length; i++) {
-                const stats = await stat(path.join(req.body.filePath, dirContents[i]));
-                if (stats.isDirectory()) {
+                const subFile = path.join(req.body.filePath, dirContents[i]);
+                const fileStats = await stat(subFile);
+                if (fileStats.isDirectory()) {
                     folders.push({
                         name: dirContents[i],
-                        mt: stats.mtime,
+                        mt: fileStats.mtime,
                     });
                 } else {
+                    let extension = utility.getFileExtension(subFile);
                     files.push({
                         name: dirContents[i],
-                        size: stats.size,
-                        mt: stats.mtime,
+                        size: fileStats.size,
+                        mt: fileStats.mtime,
+                        type: extension in config.STREAM_SUPPORTED_EXTENSIONS ? extension : "file",
                     });
                 }
             }
