@@ -1,9 +1,6 @@
 const express = require("express");
-
-const config = require("../config");
-const utility = require("../utility");
 const constants = require("../constants");
-const { USER_STORAGE_LIMIT } = require("../config");
+const utility = require("../utilities/utility");
 
 const router = express.Router();
 const logger = constants.LOGGER;
