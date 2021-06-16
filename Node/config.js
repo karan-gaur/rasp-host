@@ -10,6 +10,7 @@ module.exports = {
             pass: "creche123",
         },
     },
+    MAX_EMAIL_BODY_LENGTH: 5 * 1024 * 1024, // 5 MB - Value in bytes
 
     // Server configurations
     SALT: 10,
