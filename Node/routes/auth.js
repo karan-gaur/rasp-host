@@ -121,7 +121,7 @@ router.post(
         new_user.path = path.dirname(__dirname).split(path.sep);
         new_user.path.push("users", req.body.email);
         new_user.admin = req.body.admin ? req.body.admin : false;
-        new_user.storageLimit = isNan(req.body.storageLimit)
+        new_user.storageLimit = isNaN(req.body.storageLimit)
             ? config.USER_STORAGE_LIMIT
             : req.body.storageLimit * 1024 * 1024 * 1024;
 
