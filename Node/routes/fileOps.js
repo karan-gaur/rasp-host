@@ -5,71 +5,49 @@ const uuid = require("uuid/v4");
 const express = require("express");
 
 const config = require("../config");
-const utility = require("../utility");
 const constants = require("../constants");
+const utility = require("../utilities/utility");
+const futility = require("../utilities/fileUtility");
+const check = require("../utilities/validationUtility");
 
 const router = express.Router();
 const logger = constants.LOGGER;
-const stat = util.promisify(fs.stat);
-const mkdir = util.promisify(fs.mkdir);
-const unlink = util.promisify(fs.unlink);
-const exists = util.promisify(fs.exists);
-const readdir = util.promisify(fs.readdir);
+
+const lstat = util.promisify(fs.lstat);
 const readFile = util.promisify(fs.readFile);
 const writeFile = util.promisify(fs.writeFile);
 
-// Root Api.
-router.post("/", [utility.checkAuthentication, utility.checkFilePath], async (req, res) => {
+// Root Api
+router.post("/", [utility.checkAuthentication, check.checkFilePath], async (req, res) => {
     try {
-        let docStats = await stat(req.body.filePath);
-        if (docStats.isDirectory()) {
-            logger.info(`Reading directory details for '${req.body.token.email}' - ${req.body.filePath}`);
-            dirContents = await readdir(req.body.filePath);
-            files = [];
-            folders = [];
-
-            // Segregating files and folders in directory
-            for (let i = 0; i < dirContents.length; i++) {
-                const subFile = path.join(req.body.filePath, dirContents[i]);
-                const fileStats = await stat(subFile);
-                if (fileStats.isDirectory()) {
-                    folders.push({
-                        name: dirContents[i],
-                        mt: fileStats.mtime,
-                    });
-                } else {
-                    let extension = utility.getFileExtension(subFile);
-                    files.push({
-                        name: dirContents[i],
-                        size: fileStats.size,
-                        mt: fileStats.mtime,
-                        type: extension in config.STREAM_SUPPORTED_EXTENSIONS ? extension : "file",
-                    });
-                }
-            }
-
-            return res.status(200).json({
-                files: files,
-                folders: folders,
-                selectedFile: req.body.path,
-            });
+        if ((await lstat(req.body.filePath)).isDirectory()) {
+            let resourceInfo = await futility.getFodlerStats(req.body.filePath);
+            resourceInfo["selectedFile"] = req.body.path;
+            return res.status(200).send(resourceInfo);
         }
 
-        let extension = utility.getFileExtension(req.body.filePath);
+        let extension = futility.getFileExtension(req.body.filePath);
 
-        if (extension === "txt" && utility.getFolderSize(req.body.filePath) <= config.MAX_FILE_SIZE_FOR_EDIT) {
+        if (extension === "txt" && futility.getFolderSize(req.body.filePath) <= config.MAX_FILE_SIZE_FOR_EDIT) {
             if (req.body.write) {
+                if (typeof req.body.fileData !== "string") {
+                    logger.info(`Invalid body param 'fileData' - { 'fileData': '${req.body.fileData}' }`);
+                    return res
+                        .status(400)
+                        .json({ error: `Invalid body param 'fileData' - '${req.body.fileData}' [Exp String]` });
+                }
                 await writeFile(req.body.filePath, req.body.fileData);
                 logger.info(`Updated contents of ${req.body.filePath} by ${req.body.token.email}`);
-                return res.status(200);
+                return res.sendStatus(200);
             } else {
                 res.status(200).json({ fileData: await readFile(req.body.filePath, "utf8") });
                 logger.info(`Read file ${req.body.filePath} by ${req.body.token.email}`);
+                return;
             }
         } else if (extension in config.STREAM_SUPPORTED_EXTENSIONS) {
             // Path points to streamable file
             logger.info(`Streaming multimedia file - '${req.body.filePath}`);
-            const fileSize = docStats.size;
+            const fileSize = (await lstat(req.body.filePath)).size;
             const range = req.headers.range;
 
             if (range) {
@@ -96,39 +74,44 @@ router.post("/", [utility.checkAuthentication, utility.checkFilePath], async (re
             }
         } else {
             // Downloading file
-            res.status(200).download(req.body.filePath, function (downloadError) {
+            res.download(req.body.filePath, (downloadError) => {
                 if (downloadError) {
-                    logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
+                    logger.error(`Error downloading file - '${filePath}'. Error -  ${downloadError}`);
                     return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
                 }
-                logger.info(`Downloaded file ${req.body.filePath}`);
+                logger.info(`Downloaded file ${filePath}`);
             });
+            return res.sendStatus(200);
         }
     } catch (err) {
+        console.log(err);
         logger.error(`Error fetching file details - '${req.body.filePath}'. Err - ${err}`);
         return res.status(500).json({ error: "Internal server error." });
     }
 });
 
-// Download files.
-router.post("/download", [utility.checkAuthentication, utility.checkFilePath], async (req, res) => {
+// Download files
+router.post("/download", [utility.checkAuthentication, check.checkFilePath], async (req, res) => {
     try {
         let downloadPath = req.body.filePath;
         let isDir = fs.lstatSync(req.body.filePath).isDirectory();
         if (isDir) {
             // Directory found
             downloadPath = path.join(constants.DATA_DUMP, path.basename(req.body.filePath) + "-" + uuid() + ".zip");
-            await utility.zipFolder(req.body.filePath, downloadPath);
+            await futility.zipFolder(req.body.filePath, downloadPath);
         }
-
         // Downloading file (Compressed if directory)
-        await res.download(downloadPath, function (downloadError) {
-            if (downloadError) {
-                logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
-                return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
-            } else if (isDir) {
+        return res.download(downloadPath, (downloadError) => {
+            if (isDir) {
                 fs.unlinkSync(downloadPath);
                 logger.info(`Deleted file after download - '${downloadPath}'`);
+            }
+            if (downloadError) {
+                logger.error(`Error downloading file - '${downloadPath}'. Error -  ${downloadError}`);
+                if (!res.headersSent)
+                    return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            } else {
+                logger.info(`Downloaded file ${downloadPath}`);
             }
         });
     } catch (err) {
@@ -137,26 +120,18 @@ router.post("/download", [utility.checkAuthentication, utility.checkFilePath], a
     }
 });
 
-// Upload files.
-router.post("/upload", utility.checkAuthentication, async (req, res) => {
-    try {
-        // Validating params
-        if (!req.files || !req.files.uploadedFile) {
-            logger.error(`Missing body param - 'uploadedFile`);
-            return res.status(400).json({ error: "Invalid/Missing required value - 'uploadedFile' [File]." });
-        } else if (!fs.existsSync(req.body.filePath)) {
-            // Check if parent directory exists
-            logger.error(`Parent directory does not exists - '${req.body.filePath}'`);
-            return res.status(403).json({
-                error: "Missing parent directory - " + req.body.path.join(path.sep),
-            });
-        } else if (fs.existsSync(path.join(req.body.filePath, req.files.uploadedFile.name))) {
-            // File with similar name already exists
-            logger.error(
-                `File with name - '${path.join(req.body.filePath, req.files.uploadedFile.name)}' already exists`
-            );
-            return res.status(403).json({ error: "File with similar name already exists!" });
-        } else {
+// Upload files
+router.post(
+    "/upload",
+    [utility.checkAuthentication, check.checkFilePath, check.verifyUploadedFile],
+    async (req, res) => {
+        try {
+            // Checking if file_name is unique
+            if (fs.existsSync(path.join(req.body.filePath, req.files.uploadedFile.name))) {
+                logger.error(`File already exists - '${path.join(req.body.filePath, req.files.uploadedFile.name)}'`);
+                return res.status(403).json({ error: "File with similar name already exists!" });
+            }
+
             let usr = await User.findOne({ email: req.body.token.email }).exec();
             if (usr) {
                 // Evaluating storage
@@ -177,7 +152,7 @@ router.post("/upload", utility.checkAuthentication, async (req, res) => {
                 );
 
                 // Updating user storage
-                usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.files.uploadedFile.name));
+                usr.storage += futility.getFolderSize(path.join(req.body.filePath, req.files.uploadedFile.name));
                 await usr.save((saveError) => {
                     if (saveError) {
                         logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
@@ -191,32 +166,25 @@ router.post("/upload", utility.checkAuthentication, async (req, res) => {
                     error: "Invalid username/password. Please re-login",
                 });
             }
+        } catch (err) {
+            logger.error(`Error Uploading user file - ${err}`);
+            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
         }
-    } catch (err) {
-        logger.error(`Error Uploading user file - ${err}`);
-        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
     }
-});
+);
 
 // Create user file or directory
-router.post("/create", utility.checkAuthentication, async (req, res) => {
-    // Validating req body params
-    if (typeof req.body.isFolder === "undefined" || typeof req.body.isFolder !== "boolean") {
-        logger.error(`Bad value for parameter 'isFolder' in /create endpoint - '${req.body.fName}'`);
-        return res.status(400).json({ error: "'isFolder' must have Boolean values - [true/false]" });
-    }
-
-    if (!fs.existsSync(req.body.filePath)) {
-        logger.error(`Parent directory does not exists - '${req.body.filePath}`);
-        return res.status(403).json({
-            error: "Missing parent directory - " + req.body.path.join(path.sep),
-        });
-    } else if (fs.existsSync(path.join(req.body.filePath, req.body.fName))) {
-        // File with similar name already exists
-        logger.error(`File with name - '${path.join(req.body.filePath, req.body.fName)}' already exists`);
-        return res.status(403).json({ error: "File/Folder with similar name already exists!" });
-    } else {
+router.post(
+    "/create",
+    [utility.checkAuthentication, check.checkFilePath, check.verifyFileName, check.verifyIsFolder],
+    async (req, res) => {
         try {
+            // Checking if file_name is unique
+            if (fs.existsSync(path.join(req.body.filePath, req.body.fName))) {
+                logger.error(`File with name - '${path.join(req.body.filePath, req.body.fName)}' already exists`);
+                return res.status(403).json({ error: "File/Folder with similar name already exists!" });
+            }
+
             let usr = await User.findOne({ email: req.body.token.email }).exec();
             if (usr) {
                 // Evaluating storage
@@ -232,22 +200,23 @@ router.post("/create", utility.checkAuthentication, async (req, res) => {
                     // Creating user directory
                     fs.mkdirSync(path.join(req.body.filePath, req.body.fName));
                     logger.info(`Directory created - '${path.join(req.body.filePath, req.body.fName)}'`);
+                    return res.sendStatus(200);
                 } else {
                     // Creating empty file
                     fs.appendFileSync(path.join(req.body.filePath, req.body.fName), "");
                     logger.info(`File created - '${path.join(req.body.filePath, req.body.fName)}'`);
-                }
-                usr.storage += utility.getFolderSize(path.join(req.body.filePath, req.body.fName));
+                    usr.storage += futility.getFolderSize(path.join(req.body.filePath, req.body.fName));
 
-                usr.save((saveError) => {
-                    if (saveError) {
-                        logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
-                        return res.status(500).json({
-                            error: "Internal server error. Contact System Administrator",
-                        });
-                    }
-                    return res.sendStatus(200);
-                });
+                    usr.save((saveError) => {
+                        if (saveError) {
+                            logger.error(`Error saving updated storage limit for '${usr.email}. Err - ${saveError}`);
+                            return res.status(500).json({
+                                error: "Internal server error. Contact System Administrator",
+                            });
+                        }
+                        return res.sendStatus(200);
+                    });
+                }
             } else {
                 loggger.error(`No such user - '${req.body.token.email}`);
                 return res.status(404).json({
@@ -261,59 +230,35 @@ router.post("/create", utility.checkAuthentication, async (req, res) => {
             });
         }
     }
-});
+);
 
 // Rename user file or directory
-router.post("/rename", utility.checkAuthentication, (req, res) => {
-    try {
-        if (req.body.path.length == 0) {
-            logger.error(`Cannot update user root directory - '${req.body.filePath}'`);
-            return res.status(403).json({
-                error: "Cannot update user's root direcotry - " + req.body.path.join(path.sep),
-            });
-        } else if (!fs.existsSync(path.join(req.body.filePath))) {
-            // Check if file/folder with given name exists
-            logger.error(`File/Directory does not exists - '${req.body.filePath}'`);
-            return res.status(403).json({
-                error: "Missing File/Directory - " + req.body.path.join(path.sep),
-            });
-        } else if (fs.existsSync(path.join(path.basename(req.body.filePath), req.body.updatedName))) {
-            logger.error(
-                `Directory already exists - '${path.join(req.body.path.join(path.sep), req.body.updatedName)}'`
-            );
-            return res.status(403).json({
-                error: "File/Directory exists - " + path.join(req.body.path.join(path.sep), req.body.updatedName),
-            });
+router.post(
+    "/rename",
+    [utility.checkAuthentication, check.checkFilePath, check.verifyFileName, check.rootDirChanges],
+    (req, res) => {
+        try {
+            const newFileName = path.join(path.dirname(req.body.filePath), req.body.fName);
+            if (fs.existsSync(newFileName)) {
+                logger.error(`Directory already exists - '${newFileName}'`);
+                return res.status(403).json({ error: `File/Directory exists with similar name - '${newFileName}'` });
+            }
+            fs.renameSync(req.body.filePath, newFileName);
+            logger.info(`Renamed '${req.body.filePath}' TO '${newFileName}'`);
+            return res.sendStatus(200);
+        } catch (err) {
+            logger.error(`Renaming failed - '${req.body.filePath}'. Err - ${err}`);
+            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
         }
-        fs.renameSync(req.body.filePath, path.join(path.dirname(req.body.filePath), req.body.updatedName));
-        logger.info(
-            `Renamed '${req.body.filePath}' TO '${path.join(path.dirname(req.body.filePath), req.body.updatedName)}'`
-        );
-    } catch (err) {
-        logger.error(`Renaming failed - '${req.body.filePath}'. Err - ${err}`);
-        return res.status(500).json({
-            error: "Internal server error. Contact System Administrator",
-        });
     }
-    return res.sendStatus(200);
-});
+);
 
 // Delete user file or directory
-router.delete("/delete", utility.checkAuthentication, async (req, res) => {
+router.delete("/delete", [utility.checkAuthentication, check.checkFilePath, check.rootDirChanges], async (req, res) => {
     try {
-        if (!fs.existsSync(req.body.filePath)) {
-            logger.warn(`Delete failed. Missing directory - '${req.body.filePath}`);
-            return res.status(404).json({ error: "Missing directory - " + req.body.path.join(path.sep) });
-        } else if (req.body.path.length == 0) {
-            logger.warn(`Cannot delete root user directory - '${req.body.filePath}'`);
-            return res.status(403).json({
-                error: "Cannot delete user's root directory -" + req.body.path.join(path.sep),
-            });
-        }
-
         let usr = await User.findOne({ email: req.body.token.email }).exec();
         if (usr) {
-            const fsize = utility.getFolderSize(req.body.filePath);
+            const fsize = futility.getFolderSize(req.body.filePath);
             fs.rmSync(req.body.filePath, { recursive: true });
             logger.info(`Deleted file/folder - '${req.body.filePath}'`);
             usr.storage -= fsize;
