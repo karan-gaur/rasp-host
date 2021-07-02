@@ -4,23 +4,18 @@ const path = require("path");
 const bcrypt = require("bcrypt");
 const express = require("express");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 
 const config = require("../config");
-const utility = require("../utility");
 const constants = require("../constants");
+const utility = require("../utilities/utility");
+const futility = require("../utilities/fileUtility");
+const check = require("../utilities/validationUtility");
 
 const router = express.Router();
 const logger = constants.LOGGER;
-const transport = nodemailer.createTransport(config.mailer);
 
 // Login
-router.post("/login", async (req, res) => {
-    // Validating Params
-    if (typeof req.body.email !== "string" || typeof req.body.password !== "string") {
-        logger.info(`Missing body params Username/Password`);
-        return res.status(400).json({ error: "Invalid/Missing required values - username/password [String]." });
-    }
+router.post("/login", [check.verifyEmail, check.verifyPassword], async (req, res) => {
     try {
         const usr = await User.findOne({ email: req.body.email }).exec();
         if (usr) {
@@ -65,7 +60,7 @@ router.post("/login", async (req, res) => {
                         }
                         logger.info(`Updated user device list for - ${usr.email}`);
                     });
-
+                    console.log();
                     return res.json({
                         token: token,
                         refreshToken: refreshToken,
@@ -109,49 +104,26 @@ router.post("/logout/all", [utility.checkAuthentication, utility.verifyPassword]
 // Register new Account.
 router.post(
     "/register",
-    [utility.checkAuthentication, utility.checkAuthorization, utility.verifyPassword],
+    [
+        utility.checkAuthentication,
+        utility.checkAuthorization,
+        utility.verifyPassword,
+        check.validateName,
+        check.validateEmail,
+        check.validateUserPass,
+        check.validateAdminAccess,
+    ],
     async (req, res) => {
-        // Validating Body params
-        if (typeof req.body.name !== "string" || req.body.name.length == 0 || req.body.name.length > 32) {
-            logger.error(`Invalid '/register' body param - {'name':'${req.body.name}'}`);
-            return res
-                .status(400)
-                .json({ error: "Invalid value for 'name' - '" + req.body.name + "'. Must be string [1-32 Chars]." });
-        } else if (typeof req.body.email !== "string" || !utility.validateEmail(req.body.email)) {
-            logger.error(`Invalid '/register' body param - {'email':'${req.body.email}'}`);
-            return res
-                .status(400)
-                .json({ error: "Invalid value for 'email' - '" + req.body.email + "'. Must be string [1-256 Chars]." });
-        } else if (
-            typeof req.body.user_pass !== "string" ||
-            req.body.user_pass.length < 6 ||
-            req.body.user_pass.length > 32
-        ) {
-            logger.error(`Invalid '/register' body param - {'user_pass':'${req.body.user_pass}'}`);
-            return res.status(400).json({
-                error: "Invalid value for 'user_pass' - '" + req.body.user_pass + "'. Must be string [6-32 Chars].",
-            });
-        } else if (typeof req.body.admin !== "undefined" && typeof req.body.admin !== "boolean") {
-            logger.error(`Invalid '/register' body param - {'admin':'${req.body.admin}'}`);
-            return res
-                .status(400)
-                .json({ error: "Invalid value for 'admin' - '" + req.body.admin + "'. Must be Boolean [true/false]." });
-        } else if (req.body.storageLimit && (typeof req.body.storageLimit !== "number" || req.body.storageLimit <= 0)) {
-            logger.error(`Invalid '/register' body param - {'storageLimit':'${req.body.storageLimit}'}`);
-            return res.status(400).json({
-                error: "Invalid value for 'storageLimit' - '" + req.body.storageLimit + "'. Must be +ve Number.",
-            });
-        }
-
         // Login Successful - Creating new Account.
         var new_user = new User();
         new_user.name = req.body.name;
         new_user.email = req.body.email;
         new_user.path = path.dirname(__dirname).split(path.sep);
         new_user.path.push("users", req.body.email);
-        new_user.storageLimit = req.body.storageLimit
-            ? req.body.storageLimit * 1024 * 1024 * 1024
-            : config.USER_STORAGE_LIMIT;
+        new_user.admin = req.body.admin ? req.body.admin : false;
+        new_user.storageLimit = isNan(req.body.storageLimit)
+            ? config.USER_STORAGE_LIMIT
+            : req.body.storageLimit * 1024 * 1024 * 1024;
 
         try {
             if (
@@ -160,7 +132,7 @@ router.post(
             ) {
                 // User directory already exists. Evaluating folder size
                 try {
-                    new_user.storage = utility.getFolderSize(new_user.path.join(path.sep));
+                    new_user.storage = futility.getFolderSize(new_user.path.join(path.sep));
                     logger.info(`User directory exists. User '${new_user.email}'s folder size - '${new_user.storage}`);
                 } catch (err) {
                     logger.error(`Error evaluating folder size - '${new_user.path.join(path.sep)}'. Error - ${err}`);
@@ -179,7 +151,7 @@ router.post(
             }
 
             // Encryting password and saving in the Database
-            new_user.hash = await bcrypt.hash(req.body.user_pass, config.SALT);
+            new_user.hash = await bcrypt.hash(req.body.userPass, config.SALT);
             new_user.save((saveError) => {
                 if (saveError && saveError.code === 11000) {
                     logger.info(`Duplicate key found - '${new_user.email}`);
@@ -202,11 +174,7 @@ router.post(
 );
 
 // Refresh Token API
-router.post("/getAccessToken", async (req, res) => {
-    if (typeof req.body.refreshToken === "undefined") {
-        logger.info(`Missing required field 'refreshToken' in body`);
-        return res.status(400).json({ error: "Missing field 'refreshToken' in body" });
-    }
+router.post("/getAccessToken", check.validateRToken, async (req, res) => {
     try {
         let refreshToken = jwt.verify(req.body.refreshToken, config.REFRESH_TOKEN_SECRET_KEY);
         let device_id = refreshToken.device_id;
@@ -249,51 +217,40 @@ router.post("/getAccessToken", async (req, res) => {
 });
 
 // Delete self User
-router.post("/self/delete", [utility.checkAuthentication, utility.verifyPassword], async (req, res) => {
-    try {
-        if (typeof req.body.delData !== "boolean") {
-            // Invalid arguement parsed - req.body.delData
-            logger.error(`Invalid/Missing value for body param - { delData: ${req.body.delData} }. Must be Boolean.`);
-            return res
-                .status(422)
-                .json({ error: "Invalid/Missing value for delData - '" + req.body.delData + "'. Required - BOOLEAN" });
-        }
-        if (req.body.delData) {
-            // Deleting user directory
-            fs.rmSync(req.body.token.path.join(path.sep), { recursive: true });
-            logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
-        }
+router.post(
+    "/self/delete",
+    [utility.checkAuthentication, utility.verifyPassword, check.validateDelData],
+    async (req, res) => {
+        try {
+            if (req.body.delData) {
+                // Deleting user directory
+                fs.rmSync(req.body.token.path.join(path.sep), { recursive: true });
+                logger.info(`User root directory deleted - '${req.body.token.path.join(path.sep)}'`);
+            }
 
-        // Deleting user from DB
-        await User.deleteOne({ email: req.body.token.email });
-        logger.info(`User deleted from DB - '${req.body.token.email}`);
-        return res.sendStatus(200);
-    } catch (err) {
-        logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
-        return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+            // Deleting user from DB
+            await User.deleteOne({ email: req.body.token.email });
+            logger.info(`User deleted from DB - '${req.body.token.email}`);
+            return res.sendStatus(200);
+        } catch (err) {
+            logger.error(`Error deleting user - '${req.body.token.email}'. Error - ${err}`);
+            return res.status(500).json({ error: "Internal server error. Contact System Administrator" });
+        }
     }
-});
+);
 
 // Delete User
 router.post(
     "/admin/delete",
-    [utility.checkAuthentication, utility.checkAuthorization, utility.verifyPassword],
+    [
+        utility.checkAuthentication,
+        utility.checkAuthorization,
+        utility.verifyPassword,
+        check.validateEmail,
+        check.validateDelData,
+    ],
     async (req, res) => {
         try {
-            // Validating Body Params
-            if (typeof req.body.email !== "string") {
-                logger.error(`Invalid body attribute 'email' for '/admin/delete'. User - '${req.body.email}'`);
-                return res.status(400).json({ error: "Invalid value for 'email' - " + req.body.email });
-            } else if (typeof req.body.delData !== "boolean") {
-                // Invalid arguement parsed - req.body.delData
-                logger.info(
-                    `Invalid body attribute 'delData' for '/admin/delete' - '${req.body.delData}'. Must be Boolean.`
-                );
-                return res
-                    .status(422)
-                    .json({ error: "Invalid value for 'delData' - '" + req.body.delData + "'. Required - BOOLEAN" });
-            }
-
             // Deleting user
             const usr = await User.findOne({ email: req.body.email });
             if (usr) {

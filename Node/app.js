@@ -3,11 +3,12 @@ const cors = require("cors");
 const express = require("express");
 const mongoose = require("mongoose");
 const fileUpload = require("express-fileupload");
+
 const config = require("./config");
-const utility = require("./utility");
 const constants = require("./constants");
 const hostRouter = require("./routes/host");
 const authRouter = require("./routes/auth");
+const utility = require("./utilities/utility");
 const fileOpsRouter = require("./routes/fileOps");
 
 const app = express();
